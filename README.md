@@ -262,6 +262,7 @@ python desktop/app.py --selftest        # 源码版
 - **本项目内容以 MIT 许可发布**（见仓库根目录 [`LICENSE`](LICENSE)）：页面结构、样式、
   交互脚本、装配器、桌面版打包源码、图纸脚本、文档，以及仓库内的模型与音频资产。
   可以自由使用、修改、再分发，包括商用；保留版权声明即可。
+  范围与例外写在 [`NOTICE.md`](NOTICE.md)。
 - **第三方依赖**：Three.js r169 与官方 addons 已全量本地化到 `vendor/`（不使用 CDN，
   便于离线与内网使用），其著作权归 Three.js 作者，同样以 MIT 许可分发。
 - **模型与音频**：`assets/old-trafford.glb` 与 `assets/manchester-united-anthem.mp3`
@@ -302,14 +303,13 @@ python desktop/app.py --selftest        # 源码版
 
 ## 许可与引用
 
-本项目以 **MIT 许可** 发布，全文见 [`LICENSE`](LICENSE)：
+本项目以 **MIT 许可** 发布，全文见 [`LICENSE`](LICENSE)，
+许可范围与商标、音频的例外见 [`NOTICE.md`](NOTICE.md)：
 
 ```
-MIT License · Copyright (c) 2026 Old Trafford Exhibition Authors
+MIT License · Copyright (c) 2026 ch2571875057-ux
 ```
 
 引用请写明：**《老特拉福德球场 · 交互式三维展览》**，并附仓库地址。
-
-> 本模型为建筑可视化重建，非施工图，不得作为测绘、施工或工程依据。
 
 > 本模型为建筑可视化重建，非施工图，不得作为测绘、施工或工程依据。
