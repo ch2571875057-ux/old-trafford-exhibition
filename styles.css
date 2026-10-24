@@ -625,15 +625,33 @@ body.is-ready .panel { opacity: 1; transform: none; }
 .panel-subhead > span:last-child { font-family: var(--serif); font-size: 11.5px; letter-spacing: 0.12em; color: var(--red-soft); }
 
 /* --------------------------------------------------------------------------
-   07 视点导航面板
+   07 侧边面板列（左：视点导航/观众视角 · 右：阵容/控制台，同侧互斥展开）
    -------------------------------------------------------------------------- */
 
+.panel-col {
+  position: absolute;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  pointer-events: none;          /* 列本身不挡画布，面板各自接住指针 */
+}
+.panel-col-left { left: var(--gutter); top: 462px; width: 252px; }
+.panel-col-right { right: var(--gutter); top: 112px; width: 296px; }
+
+.panel-col > .panel { position: relative; top: auto; right: auto; left: auto; pointer-events: auto; }
+
 .view-panel {
-  left: var(--gutter);
-  top: 400px;
-  width: 252px;
+  width: 100%;
   padding-bottom: 10px;
 }
+
+.eye-panel { width: 100%; }
+
+.lineup-panel { width: 100%; }
+
+.atmosphere-panel { width: 100%; }
 
 .view-groups { display: grid; gap: 4px; margin-top: 4px; }
 
@@ -687,9 +705,7 @@ body.is-ready .panel { opacity: 1; transform: none; }
    -------------------------------------------------------------------------- */
 
 .atmosphere-panel {
-  right: var(--gutter);
-  top: 112px;
-  width: 296px;
+  width: 100%;
 }
 
 .time-readout {
@@ -1227,20 +1243,250 @@ body.is-ready .view-dock { opacity: 1; }
 .key-row span { font-size: 10.5px; letter-spacing: 0.04em; color: rgba(242, 237, 233, 0.72); }
 
 /* --------------------------------------------------------------------------
+   13b 曼联球员 · 球员卡抽屉
+   -------------------------------------------------------------------------- */
+
+.players {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  visibility: hidden;
+  pointer-events: none;
+}
+.players.is-open { visibility: visible; pointer-events: auto; }
+
+.players-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 2, 2, 0.62);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  transition: opacity 0.5s var(--ease);
+}
+.players.is-open .players-scrim { opacity: 1; }
+
+.players-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(560px, 94vw);
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(12, 8, 9, 0.97), rgba(9, 6, 7, 0.98));
+  box-shadow: -30px 0 80px rgba(0, 0, 0, 0.6);
+  transform: translateX(26px);
+  opacity: 0;
+  transition: transform 0.58s var(--ease), opacity 0.5s var(--ease);
+}
+.players.is-open .players-panel { transform: none; opacity: 1; }
+
+.players-head {
+  flex: 0 0 auto;
+  padding: 26px 26px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.players-head-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; }
+.players-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+}
+.players-sub {
+  margin: 8px 0 0;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.22em;
+  color: var(--red-soft);
+}
+.players-note {
+  margin: 14px 0 0;
+  padding-left: 12px;
+  border-left: 1px solid var(--red);
+  font-size: 10.5px;
+  line-height: 1.8;
+  color: rgba(242, 237, 233, 0.55);
+}
+
+.players-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 20px 26px 30px;
+  overscroll-behavior: contain;
+}
+
+.players-section { margin-bottom: 8px; }
+.players-section h3 {
+  margin: 14px 0 12px;
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+}
+.players-section h3 span {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.2em;
+  color: var(--faint);
+}
+
+.players-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 10px;
+}
+
+/* --------------------------------------------------------------------------
+   13c 阵容站位 · 翻转球员卡浮层
+   -------------------------------------------------------------------------- */
+
+/* 阵容面板的 11 人名单（门将 → 前锋） */
+.roster { display: grid; gap: 3px; margin-top: 10px; }
+
+/* 人形显隐开关 */
+.figures-toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  color: rgba(242, 237, 233, 0.6);
+}
+.figures-toggle {
+  position: relative;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: rgba(10, 7, 8, 0.7);
+  cursor: pointer;
+}
+.figures-toggle i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(242, 237, 233, 0.5);
+  transition: left 0.25s var(--ease), background 0.25s;
+}
+.figures-toggle.is-active { border-color: var(--red); background: rgba(200, 16, 46, 0.18); }
+.figures-toggle.is-active i { left: 18px; background: var(--red-soft); }
+
+/* 阵型选择器（8 套热门阵型） */
+.formation-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-top: 8px;
+}
+.formation-btn {
+  padding: 6px 2px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: rgba(10, 7, 8, 0.6);
+  color: rgba(242, 237, 233, 0.72);
+  cursor: pointer;
+}
+.formation-btn:hover { border-color: rgba(200, 16, 46, 0.6); color: #f2ede8; }
+.formation-btn.is-active {
+  border-color: var(--red);
+  background: rgba(200, 16, 46, 0.14);
+  color: var(--red-soft);
+}
+.roster-row {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+.roster-row:hover, .roster-row:focus-visible { border-color: rgba(200, 16, 46, 0.5); background: rgba(200, 16, 46, 0.08); }
+.roster-row b { font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--red-soft); }
+.roster-row span {
+  font-family: var(--serif);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.roster-row em {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 7.5px;
+  letter-spacing: 0.14em;
+  padding: 2px 4px;
+  border: 1px solid rgba(242, 237, 233, 0.14);
+  color: rgba(242, 237, 233, 0.7);
+}
+
+.lineup-card {
+  position: absolute;
+  z-index: 28;
+  left: -500px;
+  top: -500px;
+  width: 300px;                  /* 以人形脚底为卡底、向上展开，完整盖住胶囊人形 */
+  transform: translate(-50%, -100%);
+  pointer-events: auto;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.35s var(--ease), visibility 0.35s;
+}
+.lineup-card.is-visible { opacity: 1; visibility: visible; }
+
+.lineup-card-inner {
+  position: relative;
+  width: 100%;
+  height: 441px;                 /* 300 × (500/340)，成品卡等比缩放 */
+  transform-style: preserve-3d;
+  transition: transform 0.75s var(--ease);
+}
+.lineup-card.is-flipped .lineup-card-inner { transform: rotateY(180deg); }
+
+.lineup-card-hint {
+  display: block;
+  margin-top: 8px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 7.5px;
+  letter-spacing: 0.16em;
+  color: rgba(242, 237, 233, 0.55);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------------
    14 响应式
    -------------------------------------------------------------------------- */
 
 @media (max-width: 1400px) {
   :root { --gutter: 28px; }
   .hero { width: min(400px, 32vw); }
-  .atmosphere-panel { width: 272px; }
-  .view-panel { width: 232px; }
+  .panel-col-left { width: 232px; }
+  .panel-col-right { width: 272px; }
 }
 
 @media (max-width: 1180px) {
   .topbar-meta { display: none; }
   .hero-facts { grid-template-columns: repeat(2, 1fr); }
-  .view-panel { top: 372px; }
+  .panel-col-left { top: 512px; }
 }
 
 @media (max-width: 1020px) {
@@ -1286,6 +1532,10 @@ body.is-ready .view-dock { opacity: 1; }
 
   .atmosphere-panel { top: auto; }
   .view-panel { top: auto; }
+
+  /* 面板列在窄屏解散，面板回归底部抽屉布局 */
+  .panel-col { display: contents; }
+  .panel-col > .panel { position: absolute; }
 
   .view-dock { bottom: 14px; gap: 1px; padding: 4px; }
   .dock-button { width: 47px; height: 44px; }
@@ -1361,9 +1611,7 @@ body.is-ready .view-dock { opacity: 1; }
 .panel-tab[aria-pressed="true"] { color: #fff; border-color: var(--red); background: var(--red); }
 
 .heritage-panel {
-  right: var(--gutter);
-  top: 112px;
-  width: 296px;
+  width: 100%;
 }
 
 /* hidden 用于与控制面板互斥；出现时补一段入场动画 */
@@ -1476,4 +1724,265 @@ body.is-ready .view-dock { opacity: 1; }
 
 @media (max-width: 900px) {
   .heritage-panel { top: auto; }
+}
+
+/* --------------------------------------------------------------------------
+   球员数字卡面弹层（iframe 装载 assets/球员卡面/<slug>.html）
+   -------------------------------------------------------------------------- */
+
+/* --------------------------------------------------------------------------
+   15 球员数字卡面（成品卡 · 抽屉与阵容站位共用）
+   设计基准 340×500；阵容站位浮层内按 0.882 等比缩放（300×441）
+   -------------------------------------------------------------------------- */
+
+/* 卡面外层与换人控件（「场上」徽标 / 替补「换上」按钮） */
+.fcard-wrap { position: relative; }
+.fcard-tag, .fcard-sub {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.16em;
+  padding: 4px 8px;
+  border-radius: 2px;
+}
+.fcard-tag {
+  background: rgba(9, 6, 7, 0.82);
+  border: 1px solid rgba(242, 237, 233, 0.22);
+  color: rgba(242, 237, 233, 0.85);
+  pointer-events: none;
+}
+.fcard-sub {
+  background: rgba(200, 16, 46, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #f7efe9;
+  cursor: pointer;
+}
+.fcard-sub:hover, .fcard-sub:focus-visible { background: #da2039; }
+body.is-subbing #scene { cursor: crosshair; }
+
+.fcard {
+  position: relative;
+  width: 340px;
+  height: 500px;
+  transform-style: preserve-3d;
+  transition: transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+  outline: none;
+}
+.fcard.is-flipped { transform: rotateY(180deg); }
+.fcard:focus-visible { outline: 2px solid var(--red); outline-offset: 6px; border-radius: 16px; }
+
+.fface {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  border-radius: 16px;
+  overflow: hidden;
+  color: #f7efe9;
+  background: #1a1113;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 22px 44px rgba(0, 0, 0, 0.38);
+}
+
+/* —— 正面 —— */
+.fphoto {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 16%;
+}
+.fshade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to top, rgba(12, 6, 8, 0.88) 0%, rgba(12, 6, 8, 0.42) 26%, transparent 48%),
+    linear-gradient(to bottom, rgba(12, 6, 8, 0.42) 0%, transparent 22%);
+}
+.fchip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: rgba(16, 10, 12, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 1.5px;
+  backdrop-filter: blur(3px);
+}
+.fcrest {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 46px;
+  height: 47px;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.5));
+}
+.fname {
+  position: absolute;
+  left: 0;
+  right: 92px;
+  bottom: 0;
+  padding: 0 18px 18px;
+}
+.fname small {
+  display: block;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 2.5px;
+  color: #ffd9a6;
+  opacity: 0.9;
+}
+.fname strong {
+  display: block;
+  margin: 4px 0 0;
+  font-family: var(--serif);
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: 1.5px;
+  line-height: 1.25;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+}
+.fjersey {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  width: 88px;
+  height: 88px;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55));
+}
+
+/* —— 背面 —— */
+.fback {
+  transform: rotateY(180deg);
+  background:
+    radial-gradient(140% 90% at 85% -10%, rgba(255, 255, 255, 0.1), transparent 55%),
+    linear-gradient(200deg, #1c1210 0%, #2a1512 55%, #120c0a 100%);
+}
+.fback-inner {
+  position: relative;
+  height: 100%;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+}
+.fback-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 2.5px;
+  color: #ff9d8a;
+}
+.fback-head small { font-size: 10px; opacity: 0.6; }
+.fstat-label {
+  margin: 10px 0 5px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  opacity: 0.65;
+}
+.fstats { display: flex; gap: 6px; }
+.fstat {
+  flex: 1;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  padding: 8px 4px;
+}
+.fstat b {
+  display: block;
+  font-size: 19px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.fstat small {
+  font-size: 10px;
+  opacity: 0.72;
+  letter-spacing: 1px;
+}
+.fach { margin-top: 12px; display: grid; gap: 8px; }
+.fach div {
+  position: relative;
+  padding-left: 15px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.fach div::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.32em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 0 2px rgba(200, 16, 46, 0.35);
+}
+.fhonours {
+  margin-top: auto;
+  padding-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fhonours span {
+  font-size: 10.5px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+}
+.fnote {
+  margin: 9px 0 0;
+  font-size: 9.5px;
+  opacity: 0.5;
+  line-height: 1.55;
+}
+
+/* —— 抽屉布局 —— */
+.players-grid {
+  display: grid;
+  grid-template-columns: 340px;
+  justify-content: center;
+  gap: 26px;
+  margin-top: 6px;
+}
+
+/* —— 阵容站位浮层：成品卡等比缩放（340 → 300） —— */
+.lineup-card .fcard {
+  transform-origin: top left;
+  transform: scale(0.88235);
+}
+.lineup-card .fcard.is-flipped { transform: scale(0.88235) rotateY(180deg); }
+
+/* —— 空白占位（主教练等暂无卡面） —— */
+.fcard-blank { display: grid; place-items: center; }
+.fblank-msg {
+  text-align: center;
+  font-family: var(--serif);
+  font-size: 15px;
+  letter-spacing: 0.28em;
+  color: rgba(242, 237, 233, 0.55);
+}
+.fblank-msg small {
+  display: block;
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.22em;
+  color: var(--red-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fcard { transition: none; }
 }

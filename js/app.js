@@ -36,6 +36,10 @@ import {
   SOURCES,
   DISCLAIMER,
   HERITAGE,
+  PLAYERS,
+  LINEUP,
+  PLAYER_CARDS,
+  FORMATIONS,
 } from './data.js';
 
 /* ===========================================================================
@@ -103,6 +107,7 @@ const el = {
   viewsToggle: $('viewsToggle'),
   controlsToggle: $('controlsToggle'),
   archiveButton: $('archiveButton'),
+  playersButton: $('playersButton'),
   helpButton: $('helpButton'),
   fullscreenButton: $('fullscreenButton'),
   metaBuild: $('metaBuild'),
@@ -114,7 +119,18 @@ const el = {
   viewPanel: $('viewPanel'),
   viewGroups: $('viewGroups'),
   viewPanelCount: $('viewPanelCount'),
+  eyePanel: $('eyePanel'),
+  eyeGroups: $('eyeGroups'),
+  eyePanelCount: $('eyePanelCount'),
+  lineupPanel: $('lineupPanel'),
+  lineupGroups: $('lineupGroups'),
+  lineupPanelCount: $('lineupPanelCount'),
+  lineupRoster: $('lineupRoster'),
+  formationPicker: $('formationPicker'),
+  figuresToggle: $('figuresToggle'),
   collapseViews: $('collapseViews'),
+  collapseEye: $('collapseEye'),
+  collapseLineup: $('collapseLineup'),
 
   atmospherePanel: $('atmospherePanel'),
   collapseControls: $('collapseControls'),
@@ -200,6 +216,15 @@ const el = {
   archiveSources: $('archiveSources'),
   archiveDisclaimerShort: $('archiveDisclaimerShort'),
   archiveDisclaimerLong: $('archiveDisclaimerLong'),
+
+  players: $('players'),
+  playersScrim: $('playersScrim'),
+  playersClose: $('playersClose'),
+  playersBody: $('playersBody'),
+  playersNote: $('playersNote'),
+
+  lineupCard: $('lineupCard'),
+  lineupCardInner: $('lineupCardInner'),
 };
 
 /* ===========================================================================
@@ -240,6 +265,7 @@ const VIEW_GROUPS = [
   { type: 'aerial', label: '鸟瞰', en: 'AERIAL', hint: '整体关系与轮廓' },
   { type: 'eye', label: '人眼高度', en: 'EYE LEVEL', hint: '1.7 m 站立视线' },
   { type: 'section', label: '剖视', en: 'SECTION', hint: '沿轴剖开的结构' },
+  { type: 'lineup', label: '阵容', en: 'LINEUP', hint: '4-2-3-1 站位人形' },
 ];
 
 /** 分组后的扁平顺序（供数字键与序号显示使用） */
@@ -282,13 +308,18 @@ const state = {
   view: pickViewpoint(params.get('view') ?? 'aerial-se'),
   seatMode: pickSeatMode(params.get('seat') ?? 'natural'),
   explode: 0,
-  roofOpacity: 1,
+  roofOpacity: 100,
   section: params.get('section') === '1',
   context: params.get('context') !== '0',
   floodlights: params.get('lights') !== '0',
   autoRotate: params.get('rotate') === '1',
   archiveOpen: false,
   archiveTab: 'stats',
+  playersOpen: false,
+  lineupActive: false,   // 是否处于阵容站位机位（隐藏人形 + 机位锁定）
+  lineupFocus: null,     // 当前推近的球员 name（null = 总览）
+  formation: FORMATIONS.default,
+  lineupFiguresManual: false,   // 人形常显开关（开时离开阵容机位也可见）
   picked: null,          // 当前悬停的看台键
   pinned: null,          // 点击锁定的看台键
   night: 0,              // 0 = 白昼，1 = 全夜
@@ -300,6 +331,8 @@ const state = {
   panelViewsOpen: false,
   panelControlsOpen: false,
   viewsCollapsed: false,
+  eyeCollapsed: true,
+  lineupCollapsed: true,
   controlsCollapsed: false,
   consoleTab: 'atmosphere',   // 'atmosphere' 控制面板 / 'heritage' 队史档案库
   heritageCollapsed: false,
@@ -1019,6 +1052,8 @@ function setViewInstant(id) {
   camera.lookAt(controls.target);
   controls.enabled = true;
   controls.update();
+  syncLineupMode(vp);
+  if (vp.type === 'lineup') controls.enabled = false;   // 阵容机位锁定
   updateViewUI();
   applyDebugCamera();
 }
@@ -1026,7 +1061,7 @@ function setViewInstant(id) {
 function flyTo(id, duration = 1.5, options = {}) {
   const vp = ORDERED_VIEWS.find((v) => v.id === id);
   if (!vp || !camera || state.archiveOpen) return;
-  const resolved = resolveViewpoint(vp);
+  const resolved = options.pose || resolveViewpoint(vp);
   viewTween = {
     startedAt: performance.now(),
     duration: REDUCED_MOTION ? Math.min(duration, 0.25) : duration,
@@ -1041,7 +1076,24 @@ function flyTo(id, duration = 1.5, options = {}) {
   controls.enabled = false;
   controls.autoRotate = false;
   state.view = id;
+  syncLineupMode(vp);
   updateViewUI();
+}
+
+/** 进入/离开阵容机位时显隐人形组并复位焦点 */
+function syncLineupMode(vp) {
+  const active = vp?.type === 'lineup';
+  if (active === state.lineupActive) return;
+  state.lineupActive = active;
+  // 离开机位时：若用户开了「人形常显」则保持可见，否则收回人形
+  stadium?.setLineupVisible(active || state.lineupFiguresManual);
+  // 推近机位距人形约 9 m，放宽 OrbitControls 的最小距离，否则会被推回 14 m 外
+  controls.minDistance = active ? 3 : 14;
+  if (!active) {
+    state.lineupFocus = null;
+    figureLieTarget = 0;   // 人形立正
+    el.lineupCard?.classList.remove('is-visible', 'is-flipped');
+  }
 }
 
 function stepView(delta) {
@@ -1069,6 +1121,7 @@ const GROUP_HINT = {
   aerial: '整体鸟瞰机位，用来看清碗体、四角象限与草坪的平面关系。',
   eye: '人眼高度机位（站立视线 1.7 m），用于判断真实尺度与遮挡。',
   section: '剖视机位，沿南北向剖开，露出三层看台台阶与屋盖悬挑。',
+  lineup: '阵容站位机位：机位锁定在死忠区球门后，鼠标靠近红色人形可推近看球员卡。',
 };
 
 function tickCamera(dt) {
@@ -1087,8 +1140,8 @@ function tickCamera(dt) {
   if (raw >= 1) {
     const finishedIntro = viewTween.intro;
     viewTween = null;
-    controls.enabled = true;
-    controls.autoRotate = state.autoRotate;   // 补间结束后恢复自动环绕
+    controls.enabled = state.view !== 'lineup';       // 阵容机位保持锁定
+    controls.autoRotate = state.autoRotate && state.view !== 'lineup';
     controls.update();
     if (finishedIntro) dismissMouseHint();
   }
@@ -1171,6 +1224,14 @@ function refreshPick() {
   if (!pointerDirty || !state.started) return;
   pointerDirty = false;
   if (state.archiveOpen) {
+    setHover(null);
+    return;
+  }
+  if (state.view === 'lineup') {
+    updateLineupPointer();   // 阵容机位下改做人形靠近判定
+    return;
+  }
+  if (state.playersOpen) {
     setHover(null);
     return;
   }
@@ -1266,6 +1327,196 @@ function clearPick() {
 }
 
 /* ===========================================================================
+ * 10b. 阵容站位机位：总览锁定 · 靠近即锁定 · 翻转球员卡
+ * ========================================================================= */
+
+const LINEUP_HOVER_PX = 52;      // 鼠标与人形屏幕锚点的判定半径
+const LINEUP_REARM_DELAY = 1000; // 退出锁定后，重新开始靠近判定的冷却（ms）
+
+let lineupRearmAt = 0;           // 早于该时刻不进行靠近判定
+
+/** 世界坐标 → 页面客户区像素（在人形后或视野外时返回 null） */
+function worldToClient(vector) {
+  if (!camera) return null;
+  const projected = vector.clone().project(camera);
+  if (projected.z > 1) return null;
+  const rect = el.canvas.getBoundingClientRect();
+  return {
+    x: rect.left + ((projected.x + 1) / 2) * rect.width,
+    y: rect.top + ((1 - projected.y) / 2) * rect.height,
+  };
+}
+
+/** 推近机位：稍远一点（约 12 m），让人形整体落在卡面覆盖范围内 */
+function lineupFocusPose(part) {
+  const at = part.worldAt;
+  return {
+    position: new THREE.Vector3(at.x - 11.5, 4.8, at.z + 2.8),
+    target: new THREE.Vector3(at.x + 0.4, 1.35, at.z),
+    fov: 42,
+  };
+}
+
+/** 按 slug 取球员的卡面内容数据（js/data.js PLAYER_CARDS，与离线卡同源） */
+function cardDataFor(player) {
+  return player.slug
+    ? PLAYER_CARDS.players.find((item) => item.slug === player.slug) ?? null
+    : null;
+}
+
+/** 宽松版球衣（衣身加宽，两位数号码缩号后仍留在衣服内） */
+function jerseySVG(num) {
+  const size = String(num).length > 1 ? 28 : 34;
+  return `<svg class="fjersey" aria-label="球衣号码 ${num}" viewBox="0 0 100 100" width="88" height="88">
+    <path d="M28 10 C36 4 43 2 50 2 C57 2 64 4 72 10 L92 22 L84 42 L76 37 L76 93 L24 93 L24 37 L16 42 L8 22 Z" fill="#c8102e" stroke="#7c0a1e" stroke-width="2"/>
+    <path d="M43 6.5 Q50 14 57 6.5" stroke="#7c0a1e" stroke-width="2.4" fill="none"/>
+    <path d="M22 14 l9 7 M17 20 l9 7" stroke="#f2ede8" stroke-width="2.8" opacity=".9"/>
+    <path d="M78 14 l-9 7 M83 20 l-9 7" stroke="#f2ede8" stroke-width="2.8" opacity=".9"/>
+    <text x="50" y="66" text-anchor="middle" font-size="${size}" font-weight="500" font-family="Georgia, 'Times New Roman', serif" fill="#f7efe9">${num}</text>
+  </svg>`;
+}
+
+/**
+ * 成品数字卡面（与 assets/球员卡面/ 的离线卡同一设计）：
+ * 正面 = 照片背景 + 位置/国籍角标 + 队徽 + 英文名 + 球衣号码；
+ * 背面 = 三项生涯数据 + 成就节点 + 荣誉徽章。
+ * card 来自 PLAYER_CARDS（按 slug 关联），photo/num/captain 来自 PLAYERS。
+ */
+function fullCardHTML(card, player) {
+  const num = player.num ?? '—';
+  const chips =
+    `<span class="fchip" data-tooltip="${player.posZh ?? card.posZh}">${card.pos}</span>` +
+    `<span class="fchip" data-tooltip="${player.nation ?? card.natZh}">${card.nat}</span>`;
+  const crest = `<img class="fcrest" alt="" src="${PLAYER_CARDS.crest}" loading="lazy">`;
+  const stats = card.stats.map(([k, v]) => `<div class="fstat"><b>${v}</b><small>${k}</small></div>`).join('');
+  const ach = card.achievements
+    .map(([year, text]) => `<div><b>${year}</b> — ${text}</div>`)
+    .join('');
+  const honours = card.honours?.length
+    ? `<div class="fhonours">${card.honours.map((h) => `<span>${h}</span>`).join('')}</div>`
+    : '';
+  const captain = player.captain ? '<span class="fchip">C</span>' : '';
+  return `
+    <div class="fcard" role="button" tabindex="0" aria-label="${player.nameZh}数字卡面，点击翻面">
+      <div class="fface">
+        <img class="fphoto" alt="" src="${player.photo}" loading="lazy">
+        <div class="fshade" aria-hidden="true"></div>
+        ${crest}
+        <div style="position:absolute;top:14px;left:14px;display:flex;gap:6px;">${chips}${captain}</div>
+        <div class="fname">
+          <small>NO.${num} · MANCHESTER UNITED${player.captain ? ' · CAPTAIN' : ''}</small>
+          <strong>${player.name}</strong>
+        </div>
+        ${jerseySVG(num)}
+      </div>
+      <div class="fface fback">
+        <div class="fback-inner">
+          <div class="fback-head"><span>CAREER · 生涯与成就</span><small>NO.${num}</small></div>
+          <p class="fstat-label">${card.statLabel}</p>
+          <div class="fstats">${stats}</div>
+          <div class="fach">${ach}</div>
+          <div style="margin-top:auto;">
+            ${honours}
+            <p class="fnote">${card.statNote}。照片为网络搜集图，公开分发前需确认授权。</p>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+/** 空白占位卡（主教练等暂无卡面的对象） */
+function blankCardHTML(player) {
+  return `
+    <div class="fcard fcard-blank" aria-label="${player.nameZh}卡面制作中">
+      <div class="fface fcard-blank">
+        <div class="fblank-msg">数字卡面制作中<small>${player.name} · ${player.pos}</small></div>
+      </div>
+    </div>`;
+}
+
+/** 卡面翻面：抽屉与阵容浮层共用（事件委托，幂等绑定） */
+let cardFlipBound = false;
+function bindCardFlip() {
+  if (cardFlipBound) return;
+  cardFlipBound = true;
+  document.addEventListener('click', (event) => {
+    const card = event.target.closest('.fcard');
+    if (card) card.classList.toggle('is-flipped');
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const card = event.target instanceof HTMLElement && event.target.closest('.fcard');
+    if (card) {
+      event.preventDefault();
+      card.classList.toggle('is-flipped');
+    }
+  });
+}
+
+function fillLineupCard(player) {
+  // 成品卡直接覆盖草稿内容（340×500 设计稿按 0.882 缩放进 300px 浮层）
+  const card = cardDataFor(player);
+  el.lineupCardInner.innerHTML = card
+    ? fullCardHTML(card, player)
+    : blankCardHTML(player);
+}
+
+function focusLineup(part) {
+  state.lineupFocus = part.name;
+  flyTo('lineup', 1.0, { pose: lineupFocusPose(part) });
+  fillLineupCard(part.player);
+  el.lineupCard.classList.remove('is-flipped');
+  el.lineupCard.classList.add('is-visible');
+  el.canvas.style.cursor = 'pointer';
+}
+
+function unfocusLineup(immediate = false) {
+  if (!state.lineupFocus) return;
+  state.lineupFocus = null;
+  lineupRearmAt = performance.now() + LINEUP_REARM_DELAY;   // 1 s 后才开始下次判定
+  el.lineupCard.classList.remove('is-visible', 'is-flipped');
+  el.canvas.style.cursor = '';
+  flyTo('lineup', immediate ? 0.6 : 1.1);   // 回到总览机位（仍锁定）
+}
+
+/**
+ * 每帧（指针脏时）在阵容机位下做「鼠标靠近」判定。
+ * 靠近任一人形即锁定机位与卡面；锁定后忽略后续鼠标移动（避免视角乱飘），
+ * 由 Esc / 点击空白 / 切走视点退出。
+ */
+function updateLineupPointer() {
+  if (state.view !== 'lineup' || !stadium?.lineupParts?.length) return;
+  if (state.lineupFocus) return;                     // 已锁定：鼠标不再参与判定
+  if (formationTween) return;                        // 阵型走位期间不锁定（互斥）
+  if (performance.now() < lineupRearmAt) return;     // 退出锁定后的冷却期
+  if (!pointerInside) return;
+
+  let nearest = null;
+  let bestDist = Infinity;
+  for (const part of stadium.lineupParts) {
+    const client = worldToClient(part.anchor);
+    if (!client) continue;
+    const dist = Math.hypot(client.x - pointerClient.x, client.y - pointerClient.y);
+    if (dist < bestDist) {
+      bestDist = dist;
+      nearest = part;
+    }
+  }
+  if (nearest && bestDist <= LINEUP_HOVER_PX) focusLineup(nearest);
+}
+
+/** 焦点球员的卡面跟随其头顶锚点（补间飞行期间也保持贴住） */
+function updateLineupCardAnchor() {
+  if (state.view !== 'lineup' || !state.lineupFocus || !stadium?.lineupParts) return;
+  const part = stadium.lineupParts.find((p) => p.name === state.lineupFocus);
+  if (!part) return;
+  const client = worldToClient(part.anchor);
+  if (!client) return;
+  el.lineupCard.style.left = `${Math.round(client.x)}px`;
+  el.lineupCard.style.top = `${Math.round(client.y)}px`;
+}
+
+/* ===========================================================================
  * 11. 数据驱动的界面构建
  * ========================================================================= */
 
@@ -1291,28 +1542,67 @@ function buildHeroFacts() {
     .join('');
 }
 
+/** 按类型把视点按钮渲染进指定面板容器（含分组小标题） */
+function renderViewPanel(container, types) {
+  if (!container) return;
+  container.innerHTML = VIEW_GROUPS
+    .filter((group) => types.includes(group.type))
+    .map((group) => {
+      const items = VIEWPOINTS.filter((v) => v.type === group.type);
+      if (!items.length) return '';
+      const buttons = items
+        .map((vp) => {
+          const order = ORDERED_VIEWS.indexOf(vp) + 1;
+          const badge = order <= 10 ? `<kbd>${order === 10 ? 0 : order}</kbd>` : '';
+          return `<button class="view-button" type="button" data-view="${vp.id}" title="${vp.note || vp.nameZh}">
+            <span class="vb-index">${String(order).padStart(2, '0')}</span>
+            <span class="vb-name">${vp.nameZh || vp.name}</span>
+            ${badge}
+          </button>`;
+        })
+        .join('');
+      return `<div class="view-group">
+        <div class="view-group-head"><span>${group.en} · ${group.label}</span><em>${group.hint}</em></div>
+        ${buttons}
+      </div>`;
+    })
+    .join('');
+}
+
 function buildViewList() {
-  el.viewGroups.innerHTML = VIEW_GROUPS.map((group) => {
-    const items = VIEWPOINTS.filter((v) => v.type === group.type);
-    if (!items.length) return '';
-    const buttons = items
-      .map((vp) => {
-        const order = ORDERED_VIEWS.indexOf(vp) + 1;
-        const badge = order <= 10 ? `<kbd>${order === 10 ? 0 : order}</kbd>` : '';
-        return `<button class="view-button" type="button" data-view="${vp.id}" title="${vp.note || vp.nameZh}">
-          <span class="vb-index">${String(order).padStart(2, '0')}</span>
-          <span class="vb-name">${vp.nameZh || vp.name}</span>
-          ${badge}
-        </button>`;
-      })
-      .join('');
-    return `<div class="view-group">
-      <div class="view-group-head"><span>${group.en} · ${group.label}</span><em>${group.hint}</em></div>
-      ${buttons}
-    </div>`;
+  // 左列「视点导航」：鸟瞰 + 剖视；左列「观众视角」：人眼高度；右列「阵容站位」
+  renderViewPanel(el.viewGroups, ['aerial', 'section']);
+  renderViewPanel(el.eyeGroups, ['eye']);
+  renderViewPanel(el.lineupGroups, ['lineup']);
+  const countIn = (types) => String(VIEWPOINTS.filter((v) => types.includes(v.type)).length).padStart(2, '0');
+  el.viewPanelCount.textContent = countIn(['aerial', 'section']);
+  el.viewPanelCount.title = `共 ${VIEWPOINTS.filter((v) => ['aerial', 'section'].includes(v.type)).length} 个视点`;
+  el.eyePanelCount.textContent = countIn(['eye']);
+  el.eyePanelCount.title = `共 ${VIEWPOINTS.filter((v) => v.type === 'eye').length} 个视点`;
+  el.lineupPanelCount.textContent = countIn(['lineup']);
+}
+
+/** 阵容面板的 11 人名单：按 LINEUP 顺序（门将 → 后卫 → 中场 → 前锋），点击直达特写 */
+function buildLineupRoster() {
+  if (!el.lineupRoster) return;
+  el.lineupRoster.innerHTML = lineupSlots.map((slot) => {
+    const player = slot.player;
+    return `<button class="roster-row" type="button" data-slot="${slot.slotName}" title="${player.nameZh} · ${player.posZh ?? player.pos}">
+      <b>${player.num ?? '—'}</b>
+      <span>${player.nameZh}</span>
+      <em>${player.pos}</em>
+    </button>`;
   }).join('');
-  el.viewPanelCount.textContent = String(VIEWPOINTS.length).padStart(2, '0');
-  el.viewPanelCount.title = `共 ${VIEWPOINTS.length} 个视点`;
+}
+
+/** 阵型选择器（8 套热门阵型，来源见 data.js FORMATIONS） */
+function buildFormationPicker() {
+  if (!el.formationPicker) return;
+  el.formationPicker.innerHTML = FORMATIONS.list.map((formation) => `
+    <button class="formation-btn${formation.id === state.formation ? ' is-active' : ''}" type="button"
+            data-formation="${formation.id}" title="${formation.note}">
+      ${formation.label}
+    </button>`).join('');
 }
 
 function populateArchive() {
@@ -1638,6 +1928,184 @@ function toggleArchive(tab) {
   else openArchive(tab || state.archiveTab || 'stats');
 }
 
+/* --- 曼联球员 · 球员卡抽屉 ----------------------------------------------- */
+
+/* 换人：首发 11 个「槽位」（站位坐标不变，人员可换）+ 替补池（轮换名单）。
+ * 槽位与替补池是运行时状态，不写回 js/data.js（数据契约保持静态）。 */
+const lineupSlots = LINEUP.members.map((member) => ({
+  slotName: member.name,
+  player: PLAYERS.groups[0]?.members.find((p) => p.name === member.name)
+    ?? { name: member.name, nameZh: member.name, pos: '—', posZh: '—' },
+}));
+let benchPool = [...(PLAYERS.groups[1]?.members ?? [])];
+let pendingSub = null;   // 待换上的替补球员（换人模式）
+
+/** 把替补换到槽位上，被换下的回到替补池；同步更新场上人形、名单与抽屉 */
+function substitutePlayer(slotIndex, incoming) {
+  const slot = lineupSlots[slotIndex];
+  if (!slot || !incoming || !benchPool.includes(incoming)) return false;
+  const outgoing = slot.player;
+  slot.player = incoming;
+  benchPool.splice(benchPool.indexOf(incoming), 1, outgoing);
+  const part = stadium?.lineupParts?.find((p) => p.name === slot.slotName);
+  if (part) {
+    part.player = slot.player;
+    part.group.traverse((obj) => {
+      if (obj.userData?.lineupPlayer !== undefined) obj.userData.lineupPlayer = slot.player.name;
+    });
+  }
+  populatePlayers();
+  buildLineupRoster();
+  showToast(`换人 · ${outgoing.nameZh} ⇄ ${incoming.nameZh}`);
+  return true;
+}
+
+function beginSubstitution(player) {
+  pendingSub = player;
+  document.body.classList.add('is-subbing');
+  if (state.playersOpen) closePlayers();
+  // 互斥：卡面锁定与换人俯视抢视角，先收起卡面
+  if (state.lineupFocus) unfocusLineup(true);
+  // 换人时先升到高空俯视、人形平躺方便挑选，点完再回落（见 pointerup / 名单的换人分支）
+  figureLieTarget = -Math.PI / 2;
+  if (state.view === 'lineup') flyTo('lineup', 0.9, { pose: LINEUP_TOPDOWN_POSE() });
+  showToast(`换上 ${player.nameZh}：点击场上任意球员（或阵容名单）完成对调，Esc 取消`, 3600);
+}
+
+function endPendingSub() {
+  pendingSub = null;
+  figureLieTarget = 0;   // 人形立正
+  document.body.classList.remove('is-subbing');
+}
+
+/* --- 阵型切换：人形补间走位，相机先升到高空俯视、到位后回落总览 ------- */
+
+/** 高空俯视机位：正对实测球场中心，机身对齐长轴（白线在画面里横平竖直） */
+const LINEUP_TOPDOWN_POSE = () => {
+  const frame = stadium?.pitchFrame;
+  if (!frame) {
+    return { position: new THREE.Vector3(0, 118, 0.1), target: new THREE.Vector3(0, 0, 0), fov: 50 };
+  }
+  // 沿进攻长轴往回偏 0.6 m，让俯视的"上方向"指向进攻方向（抵消直视退化的翻滚）
+  const ax = Math.cos(frame.angle);
+  const az = -Math.sin(frame.angle);
+  return {
+    position: new THREE.Vector3(frame.center.x - ax * 0.6, 118, frame.center.z - az * 0.6),
+    target: new THREE.Vector3(frame.center.x, 0, frame.center.z),
+    fov: 50,
+  };
+};
+
+let formationTween = null;
+
+/** 人形平躺角：俯视走位/换人时 -π/2（头朝进攻方向平躺），其余 0（立正） */
+let figureLieTarget = 0;
+let figureLieAngle = 0;   // 当前躺角（每帧向 figureLieTarget 平滑）
+
+function switchFormation(id) {
+  const formation = FORMATIONS.list.find((f) => f.id === id);
+  if (!formation || id === state.formation) return;
+  state.formation = id;
+  buildFormationPicker();
+
+  // 互斥：卡面锁定与阵型切换抢视角，切换前先收起卡面
+  if (state.lineupFocus) unfocusLineup(true);
+
+  const movers = [];
+  lineupSlots.forEach((slot, index) => {
+    const part = stadium?.lineupParts?.find((p) => p.name === slot.slotName);
+    if (!part || !Array.isArray(formation.slots[index])) return;
+    movers.push({
+      part,
+      from: part.group.position.clone(),
+      to: new THREE.Vector3(formation.slots[index][0], 0, formation.slots[index][1]),
+      offset: stadium.parts.lineup.position,
+    });
+  });
+  if (!movers.length) return;
+
+  formationTween = { startedAt: performance.now(), duration: REDUCED_MOTION ? 500 : 1700, movers };
+  lineupRearmAt = performance.now() + 2800;   // 走位期间不做靠近判定
+  figureLieTarget = -Math.PI / 2;             // 俯视走位期间人形平躺（头朝进攻方向）
+  if (state.view === 'lineup') {
+    flyTo('lineup', 1.1, { pose: LINEUP_TOPDOWN_POSE() });
+    showToast(`阵型 ${formation.label} · ${formation.title}`, 3000);
+  }
+}
+
+/** 每帧推进人形走位补间；到位后自动回落到阵容总览机位 */
+function tickFormationTween() {
+  if (!formationTween) return;
+  const raw = clamp((performance.now() - formationTween.startedAt) / formationTween.duration, 0, 1);
+  const e = easeInOutCubic(raw);
+  for (const mover of formationTween.movers) {
+    mover.part.group.position.lerpVectors(mover.from, mover.to, e);
+    // 局部草坪坐标 → 世界坐标（含实测框架的平移与长轴旋转）
+    const f = stadium.lineupFrame;
+    const lx = mover.part.group.position.x;
+    const lz = mover.part.group.position.z;
+    mover.part.worldAt.set(
+      f.position.x + lx * f.cos + lz * f.sin,
+      mover.part.group.position.y,
+      f.position.z - lx * f.sin + lz * f.cos,
+    );
+    mover.part.anchor.copy(mover.part.worldAt);
+  }
+  if (raw >= 1) {
+    formationTween = null;
+    figureLieTarget = 0;   // 走位完成，人形立正
+    if (state.view === 'lineup' && !pendingSub) flyTo('lineup', 1.1);   // 回总览（仍锁定）
+  }
+}
+
+function populatePlayers() {
+  if (!el.playersBody) return;
+  el.playersNote.textContent = PLAYERS.note;
+  const groups = [
+    { title: '场上十一人', titleEn: 'ON PITCH XI', members: lineupSlots.map((slot) => ({ ...slot.player, onPitch: true })) },
+    { title: '替补席', titleEn: 'BENCH', members: benchPool },
+  ];
+  el.playersBody.innerHTML = groups.map((group) => `
+    <div class="players-section">
+      <h3>${group.title} <span>/ ${group.titleEn}</span></h3>
+      <div class="players-grid">
+        ${group.members.map((player) => {
+          const card = cardDataFor(player);
+          const cardHTML = card ? fullCardHTML(card, player) : blankCardHTML(player);
+          const action = player.onPitch
+            ? '<span class="fcard-tag">场上</span>'
+            : `<button class="fcard-sub" type="button" data-sub="${player.name}">换上</button>`;
+          return `<div class="fcard-wrap">${cardHTML}${action}</div>`;
+        }).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+function openPlayers() {
+  state.playersOpen = true;
+  el.players.classList.add('is-open');
+  el.players.setAttribute('aria-hidden', 'false');
+  el.playersButton?.setAttribute('aria-expanded', 'true');
+  controls.autoRotate = false;
+  setHover(null);
+  el.playersClose.focus({ preventScroll: true });
+}
+
+function closePlayers() {
+  state.playersOpen = false;
+  el.players.classList.remove('is-open');
+  el.players.setAttribute('aria-hidden', 'true');
+  el.playersButton?.setAttribute('aria-expanded', 'false');
+  controls.autoRotate = state.autoRotate;
+  el.playersButton?.focus({ preventScroll: true });
+}
+
+function togglePlayers() {
+  if (state.playersOpen) closePlayers();
+  else openPlayers();
+}
+
 /* ===========================================================================
  * 13. 事件绑定
  * ========================================================================= */
@@ -1649,10 +2117,48 @@ function dismissMouseHint() {
 }
 
 function bindViewPanel() {
-  el.viewGroups.addEventListener('click', (event) => {
-    const button = event.target.closest('.view-button');
+  // 视点按钮分布在三个面板里（视点导航 / 观众视角 / 阵容站位），统一委托
+  [el.viewGroups, el.eyeGroups, el.lineupGroups].forEach((container) => {
+    container?.addEventListener('click', (event) => {
+      const button = event.target.closest('.view-button');
+      if (!button) return;
+      flyTo(button.dataset.view, 1.5);
+      if (IS_NARROW()) closePanels();
+    });
+  });
+
+  // 阵型选择：人形补间走位，相机先升俯视再回落
+  el.formationPicker?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-formation]');
     if (!button) return;
-    flyTo(button.dataset.view, 1.5);
+    switchFormation(button.dataset.formation);
+  });
+
+  // 人形显隐开关：开启后任意机位都能看到阵容人形
+  el.figuresToggle?.addEventListener('click', () => {
+    state.lineupFiguresManual = !state.lineupFiguresManual;
+    el.figuresToggle.classList.toggle('is-active', state.lineupFiguresManual);
+    el.figuresToggle.setAttribute('aria-pressed', String(state.lineupFiguresManual));
+    stadium?.setLineupVisible(state.lineupFiguresManual || state.lineupActive);
+    showToast(state.lineupFiguresManual ? '人形常显 · 任意机位可见' : '人形仅阵容机位显示');
+  });
+
+  // 阵容名单：换人模式下点击 = 对调；否则点击 = 飞入该球员特写并锁定
+  el.lineupRoster?.addEventListener('click', (event) => {
+    const row = event.target.closest('.roster-row');
+    if (!row) return;
+    if (formationTween) return;              // 走位期间不抢视角（互斥）
+    const slotIndex = lineupSlots.findIndex((s) => s.slotName === row.dataset.slot);
+    if (slotIndex < 0) return;
+    if (pendingSub) {
+      const incoming = pendingSub;
+      endPendingSub();
+      if (substitutePlayer(slotIndex, incoming) && state.view === 'lineup') flyTo('lineup', 1.0);
+      return;
+    }
+    const part = stadium?.lineupParts?.find((p) => p.name === lineupSlots[slotIndex].slotName);
+    if (!part) return;                       // 几何未就绪时忽略
+    focusLineup(part);
     if (IS_NARROW()) closePanels();
   });
 }
@@ -1696,27 +2202,56 @@ function bindControlsPanel() {
 
 function bindPanelCollapse() {
   const applyCollapsed = (panel, button, collapsed) => {
+    if (!panel || !button) return;
     panel.classList.toggle('is-collapsed', collapsed);
     button.setAttribute('aria-expanded', String(collapsed));
     button.setAttribute('aria-label', collapsed ? '展开面板' : '收起面板');
   };
 
+  const setCollapsed = (panel, button, key, collapsed) => {
+    state[key] = collapsed;
+    applyCollapsed(panel, button, collapsed);
+  };
+
+  // 同侧互斥：展开一块面板时自动收起同侧其余面板
+  const expandLeft = (which) => {
+    setCollapsed(el.viewPanel, el.collapseViews, 'viewsCollapsed', which !== 'views');
+    setCollapsed(el.eyePanel, el.collapseEye, 'eyeCollapsed', which !== 'eye');
+  };
+  const expandRight = (which) => {
+    setCollapsed(el.lineupPanel, el.collapseLineup, 'lineupCollapsed', which !== 'lineup');
+    setCollapsed(el.atmospherePanel, el.collapseControls, 'controlsCollapsed', which !== 'console');
+    if (el.heritagePanel && el.collapseHeritage) {
+      setCollapsed(el.heritagePanel, el.collapseHeritage, 'heritageCollapsed', which !== 'console');
+    }
+  };
+
   el.collapseViews.addEventListener('click', () => {
-    state.viewsCollapsed = !state.viewsCollapsed;
-    applyCollapsed(el.viewPanel, el.collapseViews, state.viewsCollapsed);
+    if (state.viewsCollapsed) expandLeft('views');
+    else setCollapsed(el.viewPanel, el.collapseViews, 'viewsCollapsed', true);
+  });
+  el.collapseEye.addEventListener('click', () => {
+    if (state.eyeCollapsed) expandLeft('eye');
+    else setCollapsed(el.eyePanel, el.collapseEye, 'eyeCollapsed', true);
+  });
+  el.collapseLineup.addEventListener('click', () => {
+    if (state.lineupCollapsed) expandRight('lineup');
+    else setCollapsed(el.lineupPanel, el.collapseLineup, 'lineupCollapsed', true);
   });
   el.collapseControls.addEventListener('click', () => {
-    state.controlsCollapsed = !state.controlsCollapsed;
-    applyCollapsed(el.atmospherePanel, el.collapseControls, state.controlsCollapsed);
+    if (state.controlsCollapsed) expandRight('console');
+    else setCollapsed(el.atmospherePanel, el.collapseControls, 'controlsCollapsed', true);
   });
   el.collapseHeritage?.addEventListener('click', () => {
-    state.heritageCollapsed = !state.heritageCollapsed;
-    if (el.heritagePanel && el.collapseHeritage) {
-      applyCollapsed(el.heritagePanel, el.collapseHeritage, state.heritageCollapsed);
-    }
+    if (state.heritageCollapsed) expandRight('console');
+    else setCollapsed(el.heritagePanel, el.collapseHeritage, 'heritageCollapsed', true);
   });
 
-  // 控制台两块面板互相切换（02 控制 ⇄ 03 队史）
+  // 初始：左列展开「视点导航」，右列展开「控制台」，其余收起
+  expandLeft('views');
+  expandRight('console');
+
+  // 控制台两块面板互相切换（04 控制 ⇄ 05 队史）
   el.controlsToHeritage?.addEventListener('click', () => setConsoleTab('heritage', true));
   el.heritageToControls?.addEventListener('click', () => setConsoleTab('atmosphere', true));
 
@@ -1773,7 +2308,7 @@ function bindPicking() {
     // 用户一动镜头就取消补间，避免相机和手抢方向盘
     if (viewTween) {
       viewTween = null;
-      controls.enabled = true;
+      controls.enabled = state.view !== 'lineup';   // 阵容机位保持锁定
     }
   });
   el.canvas.addEventListener('pointerup', (event) => {
@@ -1782,6 +2317,24 @@ function bindPicking() {
     if (!down) return;
     const moved = Math.hypot(event.clientX - down.x, event.clientY - down.y);
     if (moved > 6 || event.button !== 0) return;
+    if (state.view === 'lineup') {
+      // 换人模式：点击当前锁定的场上人形 = 与替补对调，卡面就地更新
+      if (pendingSub && state.lineupFocus) {
+        const slotIndex = lineupSlots.findIndex((s) => s.slotName === state.lineupFocus);
+        const part = stadium?.lineupParts?.find((p) => p.name === state.lineupFocus);
+        const incoming = pendingSub;
+        endPendingSub();
+        if (slotIndex >= 0 && part && substitutePlayer(slotIndex, incoming)) {
+          fillLineupCard(part.player);
+          el.lineupCard.classList.remove('is-flipped');
+          flyTo('lineup', 1.0);   // 换人完成，从俯视回落总览
+        }
+        return;
+      }
+      // 阵容机位：点击画布空白处即回总览；点卡面翻转由卡面自身的 click 处理
+      if (state.lineupFocus) unfocusLineup();
+      return;
+    }
     const key = standKeyAt(event.clientX, event.clientY);
     if (key) pinStand(key === state.pinned ? null : key);
     else if (state.pinned) pinStand(null);
@@ -1807,6 +2360,18 @@ function bindChrome() {
   el.archiveClose.addEventListener('click', closeArchive);
   el.archiveScrim.addEventListener('click', closeArchive);
   el.dockArchive.addEventListener('click', () => toggleArchive());
+
+  el.playersButton?.addEventListener('click', () => togglePlayers());
+  el.playersClose.addEventListener('click', closePlayers);
+  el.playersScrim.addEventListener('click', closePlayers);
+
+  // 替补卡上的「换上」：进入换人模式，去场上点人完成对调
+  el.playersBody?.addEventListener('click', (event) => {
+    const subBtn = event.target instanceof HTMLElement && event.target.closest('[data-sub]');
+    if (!subBtn) return;
+    const player = benchPool.find((p) => p.name === subBtn.dataset.sub);
+    if (player) beginSubstitution(player);
+  });
 
   document.querySelectorAll('.archive-tab').forEach((button) => {
     button.addEventListener('click', () => setArchiveTab(button.dataset.tab));
@@ -1859,6 +2424,16 @@ function bindKeyboard() {
     if (event.key === 'Escape') {
       event.preventDefault();
       if (state.archiveOpen) closeArchive();
+      else if (state.playersOpen) closePlayers();
+      else if (pendingSub) {
+        endPendingSub();
+        showToast('已取消换人');
+      }
+      else if (state.lineupFocus) unfocusLineup(true);
+      else if (state.view === 'lineup') {
+        showToast('已离开阵容站位');
+        flyTo('aerial-se', 1.3);
+      }
       else if (state.pinned) pinStand(null);
       else if (IS_NARROW() && (state.panelViewsOpen || state.panelControlsOpen)) closePanels();
       else dismissMouseHint();
@@ -1903,6 +2478,9 @@ function bindKeyboard() {
         break;
       case 'k':
         toggleArchive();
+        break;
+      case 'p':
+        togglePlayers();
         break;
       case 'm':
         toggleAnthem();
@@ -1957,6 +2535,14 @@ function animate(now) {
 
   tickCamera(dt);
   refreshPick();
+  updateLineupCardAnchor();
+  tickFormationTween();
+
+  // 人形平躺/立正的角度平滑过渡（绕自身 Z 轴，躺下时头朝 +X 进攻方向）
+  if (stadium?.lineupParts?.length && Math.abs(figureLieTarget - figureLieAngle) > 0.002) {
+    figureLieAngle += (figureLieTarget - figureLieAngle) * Math.min(1, dt * 5);
+    for (const part of stadium.lineupParts) part.group.rotation.z = figureLieAngle;
+  }
 
   if (composer) composer.render();
   else renderer.render(scene, camera);
@@ -2025,6 +2611,7 @@ async function init() {
   bindPanelCollapse();
   bindChrome();
   bindStandCard();
+  bindPicking();
   bindKeyboard();
   updateViewUI();
 
@@ -2054,6 +2641,9 @@ async function init() {
   if (params.get('shell') === '1') {
     // 只浏览界面外壳：不加载几何，用于几何模块尚未就绪时预览交互层
     populateArchive();
+    populatePlayers();
+    buildLineupRoster();
+    bindCardFlip();
     finishBoot();
     renderer.setAnimationLoop(animate);
     state.started = true;
@@ -2092,6 +2682,10 @@ async function init() {
   setAutoRotate(state.autoRotate, false);
   applyStats();
   populateArchive();
+  populatePlayers();
+  buildLineupRoster();
+  buildFormationPicker();
+  bindCardFlip();          // 成品卡翻面：抽屉与阵容浮层共用一次委托
   renderHeritage();
   initAnthem();
   applyConsoleTab();

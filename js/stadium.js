@@ -24,7 +24,7 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { STAND_ORDER, STANDS } from './data.js';
+import { STAND_ORDER, STANDS, PLAYERS, LINEUP, COACH } from './data.js';
 
 /* ===========================================================================
  * 1. 模型标定常量
@@ -145,8 +145,8 @@ function setBootStatus(message) {
   if (el) el.textContent = message;
 }
 
-/** 按 URL 载入 GLB，并把下载进度写进引导遮罩 */
-function loadModel() {
+/** 按 URL 载入 GLB，并把下载进度写进引导遮罩；大文件请求偶发被掐断时自动重试 */
+function loadModel(attempt = 0) {
   return new Promise((resolve, reject) => {
     const loader = new GLTFLoader();
     loader.load(
@@ -162,7 +162,17 @@ function loadModel() {
           setBootStatus(`载入老特拉福德实测模型 ${megabytes} MB`);
         }
       },
-      reject,
+      (error) => {
+        // 共享开发服务在多人同时拉 29 MB 模型时偶发断流：最多重试 2 次
+        if (attempt < 2) {
+          setBootStatus(`模型下载中断，正在重试（第 ${attempt + 1} 次）…`);
+          window.setTimeout(() => {
+            loadModel(attempt + 1).then(resolve).catch(reject);
+          }, 1500);
+          return;
+        }
+        reject(error);
+      },
     );
   });
 }
@@ -458,6 +468,169 @@ function makePlinthLabel() {
  * @param {THREE.Box3} modelBox 已标定的模型世界包围盒
  * @returns {THREE.Group} 展台组（带 userData.label / userData.size）
  */
+/**
+ * 在模型网格里找西端球门（白框 + 网），用于把阵容整体对齐到真实球门位。
+ * 筛选条件即球门的几何特征：西端、门宽 7.32 m 量级、门高 2.44 m 量级、
+ * 足印薄（框架 + 网）。找不到时返回 null（回退到草坪坐标系的标称位置）。
+ */
+/**
+ * 在模型网格里找两端球门（白框 + 网），量出**实测球场基准**：
+ * 两端球门线的中点 = 球场中心；两端球门中心的连线 = 进攻长轴。
+ * 这样阵型对齐的是真实白线，而不是草坪贴图的主成分方向（两者不严格重合）。
+ * 任一端找不到时返回 null（回退到标称草坪坐标系）。
+ */
+function findPitchFrame(root) {
+  const ends = { W: [], E: [] };
+  const box = new THREE.Box3();
+  root.traverse((object) => {
+    if (!object.isMesh || !object.visible) return;
+    box.setFromObject(object);
+    if (box.isEmpty()) return;
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    if (Math.abs(center.x) < 42 || Math.abs(center.x) > 60) return;   // 两端球门区
+    if (size.z < 5.5 || size.z > 10) return;            // 门宽 7.32 m（含框）
+    if (size.y < 1.2 || size.y > 3.6) return;           // 门高 2.44 m
+    if (size.x > 4.5) return;                           // 框架 + 网的进深
+    if (center.y < 0.4 || center.y > 3.2) return;       // 立在地面上
+    ends[center.x < 0 ? 'W' : 'E'].push(box.clone());
+  });
+  const measure = (list, isWest) => {
+    if (!list.length) return null;
+    const union = list[0].clone();
+    for (let i = 1; i < list.length; i += 1) union.union(list[i]);
+    return {
+      lineX: isWest ? union.max.x : union.min.x,        // 球门线平面（网向场外延，取朝向场地的一侧）
+      centerZ: (union.min.z + union.max.z) / 2,         // 球门中心
+      width: union.max.z - union.min.z,                 // 应 ≈ 7.32 m（自检用）
+      count: list.length,
+    };
+  };
+  const west = measure(ends.W, true);
+  const east = measure(ends.E, false);
+  if (!west || !east) return null;
+  const dx = east.lineX - west.lineX;
+  const dz = east.centerZ - west.centerZ;
+  return {
+    west, east,
+    center: { x: (west.lineX + east.lineX) / 2, z: (west.centerZ + east.centerZ) / 2 },
+    length: Math.hypot(dx, dz),                          // 实测球场长（应 ≈ 105 m）
+    angle: Math.atan2(-dz, dx),                          // 长轴相对 +X 的偏角（rotation.y）
+  };
+}
+
+/**
+ * 阵容站位人形（胶囊体身体 + 球体头，俱乐部红），按 LINEUP 的草坪坐标摆放。
+ * 每个人形附带一个放大的不可见命中球（Raycaster 不看 visible，命中手感更宽容），
+ * app.js 用 anchor（头顶上方锚点）做屏幕投影定位球员卡。
+ * westGoal 存在时整体平移，把门将（局部坐标第一个成员）对到球门线前 4.5 m、
+ * 球门正中——模型草坪中心与比赛场地中心并不严格重合，不能直接信标称坐标。
+ */
+function createLineup(pitchFrame) {
+  const group = new THREE.Group();
+  group.name = 'lineup';
+
+  const bodyGeometry = new THREE.CapsuleGeometry(0.42, 1.25, 6, 20);   // 总高 ≈ 2.1 m
+  const headGeometry = new THREE.SphereGeometry(0.32, 20, 14);
+  const hitGeometry = new THREE.SphereGeometry(1.9, 8, 6);
+  const bodyMaterial = new THREE.MeshStandardMaterial({
+    name: 'lineupBody', color: 0xc8102e, roughness: 0.55, metalness: 0.08,
+  });
+  const headMaterial = new THREE.MeshStandardMaterial({
+    name: 'lineupHead', color: 0xe2493f, roughness: 0.45, metalness: 0.05,
+  });
+  const hitMaterial = new THREE.MeshBasicMaterial({ name: 'lineupHitProxy' });
+
+  const startingXi = PLAYERS.groups[0]?.members ?? [];
+  const gkMember = LINEUP.members[0];                   // 约定：第一个成员是门将
+
+  /* 实测球场基准：组原点 = 球场中心、长轴 = 两端球门连线。
+   * 局部坐标仍是理想草坪坐标（门将 (-50, 0)），由组的平移 + 旋转映射到真实白线。
+   * 未量到双端球门时回退：不旋转，仅按标称半场 52.5 m 平移。 */
+  let cosA = 1;
+  let sinA = 0;
+  if (pitchFrame) {
+    group.rotation.y = pitchFrame.angle;
+    cosA = Math.cos(pitchFrame.angle);
+    sinA = Math.sin(pitchFrame.angle);
+    // 门将局部 (-50, 0) → 球门线前 4.5 m、球门中心（小禁区前沿）
+    group.position.set(
+      pitchFrame.west.lineX + 4.5 + 50 * cosA,
+      0,
+      pitchFrame.west.centerZ - 50 * sinA,
+    );
+  } else {
+    group.position.set(gkMember.at[0] + 52.5 - 50 + 4.5, 0, gkMember.at[1]);
+  }
+
+  // 局部坐标 → 世界坐标（含组的平移与长轴旋转）
+  const localToWorld = (local) => new THREE.Vector3(
+    group.position.x + local.x * cosA + local.z * sinA,
+    local.y,
+    group.position.z - local.x * sinA + local.z * cosA,
+  );
+
+  const parts = [];
+  for (const member of LINEUP.members) {
+    const player = startingXi.find((p) => p.name === member.name);
+    if (!player || !Array.isArray(member.at)) continue;
+
+    const figure = new THREE.Group();
+    figure.name = `lineup-${player.name}`;
+    figure.position.set(member.at[0], 0, member.at[1]);
+
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.position.y = 1.04;
+    const head = new THREE.Mesh(headGeometry, headMaterial);
+    head.position.y = 2.42;
+    const hit = new THREE.Mesh(hitGeometry, hitMaterial);
+    hit.position.y = 1.35;
+    hit.visible = false;                          // 不渲染，但可被射线与投影取到
+    hit.userData.lineupPlayer = player.name;
+    figure.add(body, head, hit);
+    group.add(figure);
+
+    const worldAt = localToWorld(figure.position);
+    parts.push({
+      name: player.name,
+      player,
+      group: figure,
+      worldAt,                                              // 世界坐标（含整体对齐）
+      anchor: worldAt.clone(),                              // 卡面锚点：胶囊底部（脚底）
+    });
+  }
+
+  /* ---- 主教练：教练区（南看台前沿技术区），同款几何体；卡面暂为空白占位 ---- */
+  if (Array.isArray(COACH.at)) {
+    const coachFigure = new THREE.Group();
+    coachFigure.name = 'lineup-head-coach';
+    coachFigure.position.set(COACH.at[0], 0, COACH.at[1]);
+    const coachBody = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    coachBody.position.y = 1.04;
+    const coachHead = new THREE.Mesh(headGeometry, headMaterial);
+    coachHead.position.y = 2.42;
+    const coachHit = new THREE.Mesh(hitGeometry, hitMaterial);
+    coachHit.position.y = 1.35;
+    coachHit.visible = false;
+    coachHit.userData.lineupPlayer = COACH.name;
+    coachFigure.add(coachBody, coachHead, coachHit);
+    group.add(coachFigure);
+
+    // 教练区同属实测球场框架：局部坐标由组的平移 + 长轴旋转映射到世界
+    const coachWorld = localToWorld(coachFigure.position);
+    parts.push({
+      name: COACH.name,
+      player: { blank: true, num: null, name: COACH.name, nameZh: COACH.nameZh, pos: COACH.pos },
+      group: coachFigure,
+      worldAt: coachWorld,
+      anchor: coachWorld.clone(),
+    });
+  }
+
+  group.visible = false;
+  return { group, parts, frame: { position: group.position.clone(), cos: cosA, sin: sinA } };
+}
+
 function createPlinth(modelBox) {
   const group = new THREE.Group();
   group.name = 'plinth';
@@ -608,6 +781,11 @@ export async function buildStadium(options = {}) {
   const plinth = createPlinth(modelBox);
   root.add(plinth);
 
+  /* ---- 阵容站位人形（默认隐藏，仅阵容机位显示；先找西端球门再整体对齐） ---- */
+  const pitchFrame = findPitchFrame(root);
+  const { group: lineupGroup, parts: lineupParts, frame: lineupFrame } = createLineup(pitchFrame);
+  root.add(lineupGroup);
+
   /* ---- 地面：台座之外再铺一张大地面，让雾把远处边缘吃掉，
          避免整座球场像浮在空中 ---- */
   const plinthHeight = plinth.userData.size?.height ?? 6;
@@ -712,6 +890,10 @@ export async function buildStadium(options = {}) {
     contextGroup.visible = Boolean(on);
   }
 
+  function setLineupVisible(on) {
+    lineupGroup.visible = Boolean(on);
+  }
+
   function setExplode(value) {
     const amount = clamp01(value);
     for (const key of STAND_ORDER) {
@@ -739,7 +921,7 @@ export async function buildStadium(options = {}) {
   };
 
   // parts 的键名必须与 app.js 的 STAND_PART_KEY 完全一致（standNorth 等）
-  const parts = { context: contextGroup, site: siteGroup, ground, plinth, floodlights };
+  const parts = { context: contextGroup, site: siteGroup, ground, plinth, floodlights, lineup: lineupGroup };
   for (const key of STAND_ORDER) parts[STAND_PART_KEY[key]] = standGroups[key];
 
   function dispose() {
@@ -772,8 +954,9 @@ export async function buildStadium(options = {}) {
   setRoofOpacity(1);
   setSection(false);
   setContextVisible(options.context !== false);
+  setLineupVisible(false);
 
-  setBootStatus('老特拉福德就位');
+  setBootStatus('老特拉福德就绪');
 
   return {
     root,
@@ -781,12 +964,16 @@ export async function buildStadium(options = {}) {
     bounds,
     stats,
     seatCount: stats.seats,
+    lineupParts,
+    pitchFrame,          // 实测球场基准（两端球门量得：中心 / 长轴角 / 长度）
+    lineupFrame,         // 阵容组的变换（局部草坪坐标 → 世界坐标）
     getSeatMode: () => seatMode,
     setSeatMode: applySeatMode,
     setNight,
     setSection,
     setRoofOpacity,
     setContextVisible,
+    setLineupVisible,
     setExplode,
     dispose,
   };

@@ -117,6 +117,12 @@
         </svg>
         <span class="opt-label">控制</span>
       </button>
+      <button class="top-action" type="button" id="playersButton" aria-expanded="false">
+        <svg class="i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+          <circle cx="10" cy="6.4" r="2.6"/><path d="M4.4 16.4c.7-3.2 2.9-5 5.6-5s4.9 1.8 5.6 5"/>
+        </svg>
+        <span>曼联球员</span><kbd>P</kbd>
+      </button>
       <button class="top-action" type="button" id="archiveButton" aria-expanded="false">
         <svg class="i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
           <path d="M3 5.5h5l1.4 2H17v7.5H3z"/><path d="M6.5 11.4h7"/>
@@ -163,33 +169,86 @@
   </section>
 
   <!-- ======================================================================
-       视点导航面板
+       左侧面板列：视点导航 / 观众视角（同一时间只展开一个）
        ====================================================================== -->
-  <aside class="panel view-panel" id="viewPanel" aria-labelledby="viewPanelTitle">
-    <div class="panel-head">
-      <div>
-        <div class="panel-index">01 / CAMERA</div>
-        <h2 class="panel-title" id="viewPanelTitle">视点导航</h2>
+  <div class="panel-col panel-col-left">
+    <aside class="panel view-panel" id="viewPanel" aria-labelledby="viewPanelTitle">
+      <div class="panel-head">
+        <div>
+          <div class="panel-index">01 / CAMERA</div>
+          <h2 class="panel-title" id="viewPanelTitle">视点导航</h2>
+        </div>
+        <div class="panel-head-end">
+          <span class="panel-index" id="viewPanelCount">00</span>
+          <button class="panel-collapse" type="button" id="collapseViews" aria-expanded="false" aria-label="收起视点面板">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6.5L8 10.5l4-4"/></svg>
+          </button>
+        </div>
       </div>
-      <div class="panel-head-end">
-        <span class="panel-index" id="viewPanelCount">00</span>
-        <button class="panel-collapse" type="button" id="collapseViews" aria-expanded="false" aria-label="收起视点面板">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6.5L8 10.5l4-4"/></svg>
-        </button>
+      <div class="view-groups" id="viewGroups">
+        <!-- 由 js/app.js 依 VIEWPOINTS 生成：鸟瞰 + 剖视 -->
       </div>
-    </div>
-    <div class="view-groups" id="viewGroups">
-      <!-- 由 js/app.js 依 VIEWPOINTS 按 type 分组生成 -->
-    </div>
-  </aside>
+    </aside>
+
+    <aside class="panel eye-panel" id="eyePanel" aria-labelledby="eyePanelTitle">
+      <div class="panel-head">
+        <div>
+          <div class="panel-index">02 / VIEWER</div>
+          <h2 class="panel-title" id="eyePanelTitle">观众视角</h2>
+        </div>
+        <div class="panel-head-end">
+          <span class="panel-index" id="eyePanelCount">00</span>
+          <button class="panel-collapse" type="button" id="collapseEye" aria-expanded="false" aria-label="收起观众视角面板">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6.5L8 10.5l4-4"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="view-groups" id="eyeGroups">
+        <!-- 由 js/app.js 生成：人眼高度机位 -->
+      </div>
+    </aside>
+  </div>
 
   <!-- ======================================================================
-       氛围与结构控制面板
+       右侧面板列：阵容站位 / 控制台（同一时间只展开一个）
        ====================================================================== -->
-  <aside class="panel atmosphere-panel" id="atmospherePanel" aria-labelledby="atmosphereTitle">
-    <div class="panel-head">
-      <div>
-        <div class="panel-index">02 / ATMOSPHERE &amp; STRUCTURE</div>
+  <div class="panel-col panel-col-right">
+
+    <aside class="panel lineup-panel" id="lineupPanel" aria-labelledby="lineupPanelTitle">
+      <div class="panel-head">
+        <div>
+          <div class="panel-index">03 / LINEUP</div>
+          <h2 class="panel-title" id="lineupPanelTitle">阵容站位</h2>
+        </div>
+        <div class="panel-head-end">
+          <span class="panel-index" id="lineupPanelCount">01</span>
+          <button class="panel-collapse" type="button" id="collapseLineup" aria-expanded="false" aria-label="收起阵容面板">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6.5L8 10.5l4-4"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="view-groups" id="lineupGroups">
+        <!-- 由 js/app.js 生成：阵容站位机位入口 -->
+      </div>
+      <div class="figures-toggle-row">
+        <span>人形显示（任意机位可见）</span>
+        <button class="figures-toggle" type="button" id="figuresToggle" aria-pressed="false" aria-label="人形显示开关"><i></i></button>
+      </div>
+      <div class="panel-subhead"><span class="kicker">FORMATION</span><span>阵型</span></div>
+      <div class="formation-grid" id="formationPicker">
+        <!-- 由 js/app.js 依 FORMATIONS 生成 -->
+      </div>
+      <div class="panel-rule"></div>
+      <div class="roster" id="lineupRoster">
+        <!-- 由 js/app.js 依 LINEUP × PLAYERS 生成：门将 → 后卫 → 中场 → 前锋 -->
+      </div>
+      <p class="panel-note">红色人形按 4-2-3-1 预排（可切阵型，走位时镜头升到俯视）；靠近人形即锁定推近并展示球员卡，Esc 退出。点名单可直接锁定该球员。</p>
+    </aside>
+
+    <aside class="panel atmosphere-panel" id="atmospherePanel" aria-labelledby="atmosphereTitle">
+      <div class="panel-head">
+        <div>
+          <div class="panel-index">04 / ATMOSPHERE &amp; STRUCTURE</div>
         <h2 class="panel-title" id="atmosphereTitle">日照 · 座席 · 剖视</h2>
       </div>
       <div class="panel-head-end">
@@ -324,7 +383,7 @@
   <aside class="panel heritage-panel" id="heritagePanel" aria-labelledby="heritageTitle" hidden>
     <div class="panel-head">
       <div>
-        <div class="panel-index">03 / HERITAGE</div>
+        <div class="panel-index">05 / HERITAGE</div>
         <h2 class="panel-title" id="heritageTitle">曼联队史档案库</h2>
       </div>
       <div class="panel-head-end">
@@ -369,6 +428,8 @@
     <div class="honour-grid" id="heritageHonours"></div>
     <p class="panel-note" id="heritageNote"></p>
   </aside>
+
+  </div><!-- /panel-col-right -->
 
   <!-- ======================================================================
        看台信息卡（拾取后展开）
@@ -557,6 +618,7 @@
               <div class="key-row"><div><kbd>V</kbd></div><span>切换控制台：控制 ⇄ 队史档案库</span></div>
               <div class="key-row"><div><kbd>空格</kbd></div><span>自动环绕开关</span></div>
               <div class="key-row"><div><kbd>K</kbd></div><span>打开 / 关闭档案抽屉</span></div>
+              <div class="key-row"><div><kbd>P</kbd></div><span>打开 / 关闭曼联球员卡抽屉</span></div>
               <div class="key-row"><div><kbd>?</kbd> <kbd>H</kbd></div><span>打开快捷键清单</span></div>
               <div class="key-row"><div><kbd>F</kbd></div><span>全屏</span></div>
               <div class="key-row"><div><kbd>Esc</kbd></div><span>关闭抽屉 / 取消看台选择</span></div>
@@ -574,6 +636,37 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- ======================================================================
+       曼联球员 · 球员卡抽屉
+       ====================================================================== -->
+  <div class="players" id="players" role="dialog" aria-modal="true" aria-labelledby="playersTitle" aria-hidden="true">
+    <div class="players-scrim" id="playersScrim"></div>
+    <div class="players-panel" id="playersPanel">
+      <div class="players-head">
+        <div class="players-head-top">
+          <div>
+            <h2 class="players-title" id="playersTitle">曼联球员</h2>
+            <p class="players-sub">MANCHESTER UNITED · SQUAD 2026-27</p>
+          </div>
+          <button class="icon-button" type="button" id="playersClose" aria-label="关闭球员卡">
+            <svg class="i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 5l10 10M15 5L5 15"/></svg>
+          </button>
+        </div>
+        <p class="players-note" id="playersNote"></p>
+      </div>
+      <div class="players-body" id="playersBody">
+        <!-- 由 js/app.js 依 PLAYERS 填充 -->
+      </div>
+    </div>
+  </div>
+
+  <div class="lineup-card" id="lineupCard" aria-hidden="true">
+    <div class="lineup-card-inner" id="lineupCardInner">
+      <!-- 由 js/app.js 依 PLAYER_CARDS × PLAYERS 填充正式数字卡面（340×500 等比缩放） -->
+    </div>
+    <span class="lineup-card-hint">点击卡面翻转 · Esc 返回总览</span>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
