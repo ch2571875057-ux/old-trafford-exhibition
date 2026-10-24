@@ -1,0 +1,38 @@
+MIT License
+
+Copyright (c) 2026 Old Trafford Exhibition Authors
+
+本许可适用于本仓库中由项目作者创作的内容：页面结构、样式、交互脚本
+（index.html、styles.css、js/）、GLB 装配器、桌面版打包源码（desktop/）、
+图纸生成与校验脚本（tools/）、文档（README.md、docs/）以及本仓库中的
+三维模型 assets/old-trafford.glb 与音频 assets/manchester-united-anthem.mp3。
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+补充说明（不改变上述 MIT 条款，仅作事实澄清）：
+
+1. 第三方依赖：vendor/ 下的 Three.js r169 及其官方 addons 由 Three.js 作者以 MIT
+   许可发布，本仓库仅做本地化分发，其著作权归原作者。
+2. 商标：Manchester United、Old Trafford、Theatre of Dreams 及相关徽记、队歌旋律
+   与歌词的相关权利归其权利人所有。本许可是对代码与文档的授权，
+   不构成任何商标授权，也不代表与曼彻斯特联足球俱乐部存在关联或得到其背书。
+3. 工程用途：本模型为建筑可视化重建，非施工图，不得作为测绘、施工或工程依据。
+   依 MIT 条款使用本项目所产生的任何后果，由使用者自行承担。
