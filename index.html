@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="老特拉福德球场交互式三维展览：程序化重建的碗形看台、四座看台档案、日照与泛光灯夜景、结构剖视与资料来源清单。">
+<title>老特拉福德球场 · 交互式三维展览</title>
+<link rel="icon" type="image/png" href="./assets/favicon.png">
+<link rel="stylesheet" href="./styles.css">
+<!-- Three.js 全部本地化，禁止任何 CDN。three/addons/ 必须以斜杠结尾才能匹配子路径 -->
+<script type="importmap">
+{"imports":{
+  "three":"./vendor/three.module.js",
+  "three/addons/":"./vendor/addons/"
+}}
+</script>
+</head>
+<body>
+<div class="app" id="app" data-phase="dusk">
+
+  <!-- 3D 视口 -->
+  <canvas id="scene" aria-label="老特拉福德球场三维视图"></canvas>
+  <div class="scene-wash" aria-hidden="true"></div>
+  <div class="scene-grain" aria-hidden="true"></div>
+
+  <!-- ======================================================================
+       加载遮罩：几何生成为同步过程，遮罩按阶段推进并在完成后淡出
+       ====================================================================== -->
+  <div class="boot" id="boot" role="status" aria-live="polite">
+    <div class="boot-inner">
+      <div class="boot-mark" aria-hidden="true">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.4">
+          <ellipse cx="24" cy="24" rx="21" ry="14"/>
+          <ellipse cx="24" cy="24" rx="12" ry="7.4"/>
+          <path d="M3 24h6M39 24h6M24 10v-4M24 42v-4"/>
+          <path d="M24 16.6v14.8" stroke-dasharray="2 3"/>
+        </svg>
+      </div>
+      <h1 class="boot-title">老特拉福德</h1>
+      <p class="boot-sub">Old Trafford · Interactive Architectural Model</p>
+
+      <div class="boot-bar-wrap">
+        <div class="boot-bar" id="bootBar"></div>
+      </div>
+      <div class="boot-meta">
+        <span id="bootStatus">正在准备三维上下文</span>
+        <span class="boot-percent" id="bootPercent">00%</span>
+      </div>
+
+      <ol class="boot-steps" id="bootSteps" aria-hidden="true">
+        <li></li><li></li><li></li><li></li><li></li>
+      </ol>
+
+      <p class="boot-note" id="bootNote">
+        场地几何由 <span class="mono">js/stadium.js</span> 依公开来源尺寸程序化生成，<br>
+        首次进入需要数秒。草坪 105 × 68 m 为按标准假定，非实测。
+      </p>
+    </div>
+  </div>
+
+  <!-- WebGL 或几何模块不可用时的回退面板 -->
+  <div class="fallback" id="fallback" hidden>
+    <div class="fallback-inner">
+      <p class="fallback-kicker">FALLBACK · 无法建立三维视图</p>
+      <h2 id="fallbackTitle">球场几何尚未就绪</h2>
+      <p id="fallbackText">
+        页面外壳与交互层已加载，但三维几何模块没有就绪。本页必须通过本地 HTTP 服务打开
+        （ES module 在 file:// 协议下无法加载），且需要 <span class="mono">js/stadium.js</span> 与
+        <span class="mono">js/data.js</span> 同时存在。请确认服务已启动，然后重试。
+      </p>
+      <pre id="fallbackMessage"></pre>
+      <div class="fallback-actions">
+        <button class="ghost-button" id="fallbackRetry" type="button">重新加载页面</button>
+        <button class="ghost-button" id="fallbackShell" type="button">仅浏览界面外壳</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================================
+       顶栏
+       ====================================================================== -->
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="老特拉福德球场三维展览">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.3">
+          <path d="M20 3l14 7v20l-14 7-14-7V10z"/>
+          <ellipse cx="20" cy="20" rx="10.5" ry="6.6"/>
+          <path d="M20 13.4v13.2" stroke-dasharray="2 2.6"/>
+        </svg>
+      </span>
+      <span class="brand-copy">
+        <span class="brand-cn">老特拉福德球场</span>
+        <span class="brand-en">OLD TRAFFORD · THEATRE OF DREAMS</span>
+      </span>
+    </a>
+
+    <div class="topbar-meta" aria-hidden="true">
+      <span class="signal-dot"></span>
+      <span>53.4631° N / 2.2913° W</span>
+      <span class="meta-slash">/</span>
+      <span>启用 1910</span>
+      <span class="meta-slash">/</span>
+      <span id="metaBuild">几何未构建</span>
+    </div>
+
+    <nav class="top-actions" aria-label="全局操作">
+      <button class="top-action is-mobile-only" type="button" id="viewsToggle" aria-expanded="false">
+        <svg class="i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M5 10h10M10 5v10"/><circle cx="10" cy="10" r="7.2"/>
+        </svg>
+        <span class="opt-label">视点</span>
+      </button>
+      <button class="top-action is-mobile-only" type="button" id="controlsToggle" aria-expanded="false">
+        <svg class="i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M3 6h14M3 10h14M3 14h14"/><circle cx="7" cy="6" r="1.8"/><circle cx="13" cy="10" r="1.8"/><circle cx="9" cy="14" r="1.8"/>
+        </svg>
+        <span class="opt-label">控制</span>
+      </button>
+      <button class="top-action" type="button" id="archiveButton" aria-expanded="false">
+        <svg class="i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M3 5.5h5l1.4 2H17v7.5H3z"/><path d="M6.5 11.4h7"/>
+        </svg>
+        <span>档案</span><kbd>K</kbd>
+      </button>
+      <button class="top-action" type="button" id="helpButton">
+        <svg class="i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+          <circle cx="10" cy="10" r="7.2"/><path d="M8.2 8.1c0-1.1.9-1.9 2-1.9s1.9.7 1.9 1.7c0 1.5-2 1.6-2 3"/>
+          <circle cx="10" cy="14" r=".9" fill="currentColor" stroke="none"/>
+        </svg>
+        <span>快捷键</span><kbd>?</kbd>
+      </button>
+      <button class="icon-button" type="button" id="fullscreenButton" aria-label="全屏" title="全屏（F）">
+        <svg class="i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M7 3H3v4M13 3h4v4M13 17h4v-4M7 17H3v-4"/>
+        </svg>
+      </button>
+    </nav>
+  </header>
+
+  <!-- ======================================================================
+       主标题区
+       ====================================================================== -->
+  <section class="hero" id="hero" aria-labelledby="heroTitle">
+    <p class="hero-kicker">
+      <span>梦想剧场</span>
+      <span>THEATRE OF DREAMS</span>
+      <span>斯特雷特福德 · 1910</span>
+    </p>
+    <h1 id="heroTitle">
+      <span class="hero-cn">老特拉福德</span>
+      <span class="hero-en">OLD<br>TRAFFORD</span>
+    </h1>
+    <p class="hero-lede">
+      全场唯一单层的南看台，与三层的弗格森爵士看台，构成这座球场最根本的不对称。
+      本页按公开来源尺寸程序化重建碗形看台、屋盖悬挑与周边配景，并把每一处尺寸的可信度
+      标注在档案里。
+    </p>
+    <div class="hero-facts" id="heroFacts">
+      <!-- 由 js/app.js 依 META / STANDS 填充 -->
+    </div>
+    <p class="hero-note" id="heroNote"></p>
+  </section>
+
+  <!-- ======================================================================
+       视点导航面板
+       ====================================================================== -->
+  <aside class="panel view-panel" id="viewPanel" aria-labelledby="viewPanelTitle">
+    <div class="panel-head">
+      <div>
+        <div class="panel-index">01 / CAMERA</div>
+        <h2 class="panel-title" id="viewPanelTitle">视点导航</h2>
+      </div>
+      <div class="panel-head-end">
+        <span class="panel-index" id="viewPanelCount">00</span>
+        <button class="panel-collapse" type="button" id="collapseViews" aria-expanded="false" aria-label="收起视点面板">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6.5L8 10.5l4-4"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="view-groups" id="viewGroups">
+      <!-- 由 js/app.js 依 VIEWPOINTS 按 type 分组生成 -->
+    </div>
+  </aside>
+
+  <!-- ======================================================================
+       氛围与结构控制面板
+       ====================================================================== -->
+  <aside class="panel atmosphere-panel" id="atmospherePanel" aria-labelledby="atmosphereTitle">
+    <div class="panel-head">
+      <div>
+        <div class="panel-index">02 / ATMOSPHERE &amp; STRUCTURE</div>
+        <h2 class="panel-title" id="atmosphereTitle">日照 · 座席 · 剖视</h2>
+      </div>
+      <div class="panel-head-end">
+        <button class="panel-tab" type="button" id="controlsToHeritage" title="曼联队史档案库">队史</button>
+        <button class="panel-collapse" type="button" id="collapseControls" aria-expanded="false" aria-label="收起控制面板">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6.5L8 10.5l4-4"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 时刻与日照 -->
+    <div class="time-readout">
+      <strong class="time-value" id="clock">--:--</strong>
+      <span class="time-phase" id="timePhase">—</span>
+      <small class="time-note" id="sunNote">太阳高度 —</small>
+    </div>
+
+    <div class="range-wrap">
+      <input class="range" type="range" id="timeRange" min="0" max="24" step="0.05" value="18.4"
+             aria-label="时刻（0 到 24 时）">
+      <div class="range-ticks" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+    </div>
+
+    <div class="preset-row" id="timePresets">
+      <button type="button" data-hour="6.2">黎明</button>
+      <button type="button" data-hour="12.5">正午</button>
+      <button type="button" data-hour="18.3">黄昏</button>
+      <button type="button" data-hour="20.6">夜间</button>
+    </div>
+
+    <div class="switch-row switch-row--rule">
+      <div>
+        <span class="switch-title">昼夜对调</span>
+        <small>直接跳到 12:30 白昼或 20:36 夜间 <kbd>N</kbd></small>
+      </div>
+      <div class="option-grid option-grid--two" style="margin:0;width:132px" id="dayNightRow">
+        <button class="option option--plain" type="button" data-phase="day">白昼</button>
+        <button class="option option--plain" type="button" data-phase="night">夜间</button>
+      </div>
+    </div>
+
+    <div class="switch-row">
+      <div>
+        <span class="switch-title">泛光灯夜景</span>
+        <small>四角灯桥自发光 + 草坪照明 + 泛光后处理</small>
+      </div>
+      <button class="switch" type="button" role="switch" aria-checked="true" data-switch="floodlights" aria-label="泛光灯夜景"><span></span></button>
+    </div>
+
+    <div class="panel-rule"></div>
+
+    <!-- 座席模式 -->
+    <div class="panel-subhead">
+      <span class="kicker">SEATING MODE</span>
+      <span id="seatModeName">自然分布</span>
+    </div>
+    <div class="option-grid option-grid--two" id="seatModeGrid">
+      <button class="option" type="button" data-seat-mode="natural">
+        <span class="swatch" data-swatch="seat.main"></span>
+        <span class="option-name">自然分布</span><small>有观众时的座席分布</small>
+      </button>
+      <button class="option" type="button" data-seat-mode="blocks">
+        <span class="swatch" data-swatch="seat.dark"></span>
+        <span class="option-name">分区块</span><small>按看台分区着色</small>
+      </button>
+      <button class="option" type="button" data-seat-mode="capacity">
+        <span class="swatch" data-swatch="seat.highlight"></span>
+        <span class="option-name">容量满座</span><small>全席满座 74,244</small>
+      </button>
+      <button class="option" type="button" data-seat-mode="away">
+        <span class="swatch" data-swatch="seat.away"></span>
+        <span class="option-name">客队区</span><small>东看台客队球迷区</small>
+      </button>
+      <button class="option option--plain" type="button" data-seat-mode="off">
+        <span class="option-name">隐藏座席</span>
+      </button>
+    </div>
+    <p class="option-desc" id="seatModeDesc">按公开容量口径加权分布，颜色取自俱乐部红。</p>
+
+    <div class="panel-rule"></div>
+
+    <!-- 结构剖视 -->
+    <div class="panel-subhead">
+      <span class="kicker">SECTION</span>
+      <span>结构剖视</span>
+    </div>
+
+    <div class="range-row">
+      <label class="range-label" for="explodeRange">看台分离</label>
+      <span class="range-value" id="explodeValue">0%</span>
+      <input class="range" type="range" id="explodeRange" min="0" max="100" step="1" value="0"
+             aria-label="看台向外分离程度（0 到 100%）">
+      <p class="range-hint">四座看台与四角象限沿各自法向分离，露出层间环廊与台阶剖面。</p>
+    </div>
+
+    <div class="range-row">
+      <label class="range-label" for="roofRange">屋盖透明度</label>
+      <span class="range-value" id="roofValue">100%</span>
+      <input class="range" type="range" id="roofRange" min="0" max="100" step="1" value="100"
+             aria-label="屋盖透明度（0 为完全透明）">
+      <p class="range-hint">压低透明度可透视北看台 58.5 m 悬挑与台阶关系。</p>
+    </div>
+
+    <div class="switch-row switch-row--rule">
+      <div>
+        <span class="switch-title">沿南北向剖开</span>
+        <small>隐藏 Z 轴正半侧，露出剖面 <kbd>E</kbd></small>
+      </div>
+      <button class="switch" type="button" role="switch" aria-checked="false" data-switch="section" aria-label="剖切显示"><span></span></button>
+    </div>
+
+    <div class="switch-row">
+      <div>
+        <span class="switch-title">周边配景</span>
+        <small>道路、运河、铁路与天际线 <kbd>C</kbd></small>
+      </div>
+      <button class="switch" type="button" role="switch" aria-checked="true" data-switch="context" aria-label="周边配景显隐"><span></span></button>
+    </div>
+
+    <div class="switch-row">
+      <div>
+        <span class="switch-title">自动环绕</span>
+        <small>相机绕球场缓慢旋转 <kbd>空格</kbd></small>
+      </div>
+      <button class="switch" type="button" role="switch" aria-checked="false" data-switch="rotate" aria-label="自动环绕"><span></span></button>
+    </div>
+  </aside>
+
+  <!-- ======================================================================
+       队史档案库面板（与控制面板同一位置，互相切换）
+       ====================================================================== -->
+  <aside class="panel heritage-panel" id="heritagePanel" aria-labelledby="heritageTitle" hidden>
+    <div class="panel-head">
+      <div>
+        <div class="panel-index">03 / HERITAGE</div>
+        <h2 class="panel-title" id="heritageTitle">曼联队史档案库</h2>
+      </div>
+      <div class="panel-head-end">
+        <button class="panel-tab" type="button" id="heritageToControls" title="回到日照 · 座席 · 剖视">控制</button>
+        <button class="panel-collapse" type="button" id="collapseHeritage" aria-expanded="false" aria-label="收起面板">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6.5L8 10.5l4-4"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 队歌 -->
+    <div class="anthem" id="anthemBlock">
+      <div class="anthem-head">
+        <span class="kicker">CLUB ANTHEM</span>
+        <span class="anthem-state" id="anthemState">未播放</span>
+      </div>
+      <p class="anthem-title" id="anthemTitle">Glory Glory Man United</p>
+      <p class="anthem-sub" id="anthemSub">曼联队歌 · 循环播放</p>
+      <div class="anthem-bar" aria-hidden="true"><span id="anthemProgress"></span></div>
+      <div class="anthem-row">
+        <button class="anthem-btn" type="button" id="anthemPlay" aria-pressed="false">播放</button>
+        <button class="anthem-btn anthem-btn--ghost" type="button" id="anthemStop">停止</button>
+        <span class="anthem-time" id="anthemTime">00:00 / 00:00</span>
+      </div>
+      <p class="anthem-note" id="anthemNote"></p>
+    </div>
+
+    <div class="panel-rule"></div>
+
+    <div class="panel-subhead">
+      <span class="kicker">MILESTONES</span>
+      <span>关键节点</span>
+    </div>
+    <ol class="timeline" id="heritageTimeline"></ol>
+
+    <div class="panel-rule"></div>
+
+    <div class="panel-subhead">
+      <span class="kicker">HONOURS</span>
+      <span>冠军陈列</span>
+    </div>
+    <div class="honour-grid" id="heritageHonours"></div>
+    <p class="panel-note" id="heritageNote"></p>
+  </aside>
+
+  <!-- ======================================================================
+       看台信息卡（拾取后展开）
+       ====================================================================== -->
+  <section class="stand-card" id="standCard" aria-live="polite" aria-labelledby="standCardName">
+    <div class="stand-card-head">
+      <div>
+        <p class="stand-card-kicker" id="standCardKicker">STAND FILE</p>
+        <h2 class="stand-card-name" id="standCardName">—</h2>
+        <p class="stand-card-en" id="standCardEn">—</p>
+        <p class="stand-card-former" id="standCardFormer">—</p>
+      </div>
+      <button class="stand-card-close" type="button" id="standCardClose" aria-label="关闭看台信息卡">×</button>
+    </div>
+    <div class="stand-card-grid" id="standCardGrid"></div>
+    <div class="stand-card-tierlist" id="standCardTiers"></div>
+    <p class="stand-card-note" id="standCardFacade"></p>
+    <p class="stand-card-note stand-card-note--context" id="standCardContext"></p>
+    <div class="stand-card-actions">
+      <button type="button" id="standCardFly">转到该侧视点</button>
+      <button type="button" id="standCardArchive">记入档案</button>
+    </div>
+  </section>
+
+  <!-- 悬停光标跟随提示 -->
+  <div class="pick-tip" id="pickTip" aria-hidden="true">
+    <span id="pickTipName">—</span>
+    <small id="pickTipMeta">—</small>
+  </div>
+
+  <!-- ======================================================================
+       场景说明 / 统计 / 页脚
+       ====================================================================== -->
+  <div class="scene-caption" id="sceneCaption">
+    <span class="caption-index" id="captionIndex">01</span>
+    <div>
+      <span class="caption-title" id="captionTitle">—</span>
+      <p id="captionText">—</p>
+    </div>
+  </div>
+
+  <div class="stats-hud" id="statsHud">
+    <div class="stat"><span class="stat-value num" id="statSeats">—</span><span class="stat-label">座席 SEATS</span></div>
+    <div class="stat"><span class="stat-value num" id="statTriangles">—</span><span class="stat-label">三角面 TRIS</span></div>
+    <div class="stat"><span class="stat-value num" id="statBuild">—</span><span class="stat-label">构建 MS</span></div>
+    <div class="stat"><span class="stat-value num" id="statStands">—</span><span class="stat-label">看台 STANDS</span></div>
+    <div class="stat stat--accent"><span class="stat-value num" id="statTiers">—</span><span class="stat-label">层段 TIERS</span></div>
+  </div>
+
+  <div class="bottom-meta">
+    <span id="bottomDisclaimer">—</span>
+    <span id="bottomMeta">老特拉福德球场 · 程序化重建 · 非测绘成果</span>
+  </div>
+
+  <!-- ======================================================================
+       底部工具坞
+       ====================================================================== -->
+  <nav class="view-dock" aria-label="快速操作">
+    <button class="dock-button" type="button" id="dockReset" title="复位视角（R）">
+      <svg class="i-lg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+        <circle cx="10" cy="10" r="6.4"/><path d="M10 3.2v3M10 13.8v3M3.2 10h3M13.8 10h3"/>
+      </svg><span>复位</span>
+    </button>
+    <button class="dock-button" type="button" id="dockRotate" aria-pressed="false" title="自动环绕（空格）">
+      <svg class="i-lg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+        <path d="M16.4 10a6.4 6.4 0 1 1-2.1-4.7"/><path d="M16.6 3.4v3.2h-3.2"/>
+      </svg><span>环绕</span>
+    </button>
+    <div class="dock-divider" aria-hidden="true"></div>
+    <button class="dock-button" type="button" id="dockSection" aria-pressed="false" title="剖切显示（E）">
+      <svg class="i-lg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+        <path d="M3 5h14M3 9h14M3 13h14M3 17h14" stroke-dasharray="3 2"/>
+      </svg><span>剖视</span>
+    </button>
+    <button class="dock-button" type="button" id="dockRoof" aria-pressed="true" title="屋盖显隐（X）">
+      <svg class="i-lg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+        <path d="M2 9l8-5 8 5"/><path d="M5 9v6M15 9v6"/>
+      </svg><span>屋盖</span>
+    </button>
+    <button class="dock-button" type="button" id="dockNight" aria-pressed="false" title="昼夜对调（N）">
+      <svg class="i-lg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+        <path d="M15.6 12.4A6 6 0 0 1 7.6 4.4a6.4 6.4 0 1 0 8 8z"/>
+      </svg><span>昼夜</span>
+    </button>
+    <div class="dock-divider" aria-hidden="true"></div>
+    <button class="dock-button" type="button" id="dockArchive" title="档案抽屉（K）">
+      <svg class="i-lg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+        <path d="M3 5.5h5l1.4 2H17v7.5H3z"/><path d="M6.5 11.4h7"/>
+      </svg><span>档案</span>
+    </button>
+    <button class="dock-button" type="button" id="dockFullscreen" title="全屏（F）">
+      <svg class="i-lg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+        <path d="M7 3H3v4M13 3h4v4M13 17h4v-4M7 17H3v-4"/>
+      </svg><span>全屏</span>
+    </button>
+  </nav>
+
+  <div class="mouse-hint" id="mouseHint">
+    <span><b>拖拽</b> 旋转 · <b>滚轮</b> 缩放 · <b>右键</b> 平移 · <b>点击看台</b> 查看档案</span>
+    <button type="button" id="dismissHint" aria-label="关闭操作提示">×</button>
+  </div>
+
+  <!-- ======================================================================
+       档案抽屉
+       ====================================================================== -->
+  <div class="archive" id="archive" role="dialog" aria-modal="true" aria-labelledby="archiveTitle" aria-hidden="true">
+    <div class="archive-scrim" id="archiveScrim"></div>
+    <div class="archive-panel" id="archivePanel">
+      <div class="archive-head">
+        <div class="archive-head-top">
+          <div>
+            <h2 class="archive-title" id="archiveTitle">球场档案</h2>
+            <p class="archive-sub">OLD TRAFFORD · DATA &amp; SOURCES</p>
+          </div>
+          <button class="icon-button" type="button" id="archiveClose" aria-label="关闭档案">
+            <svg class="i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 5l10 10M15 5L5 15"/></svg>
+          </button>
+        </div>
+        <div class="archive-tabs" role="tablist" aria-label="档案分类">
+          <button class="archive-tab is-active" type="button" role="tab" data-tab="stats" aria-selected="true">建造统计</button>
+          <button class="archive-tab" type="button" role="tab" data-tab="stands" aria-selected="false">看台档案</button>
+          <button class="archive-tab" type="button" role="tab" data-tab="sources" aria-selected="false">资料来源</button>
+          <button class="archive-tab" type="button" role="tab" data-tab="disclaimer" aria-selected="false">精度声明</button>
+          <button class="archive-tab" type="button" role="tab" data-tab="keys" aria-selected="false">快捷键</button>
+        </div>
+      </div>
+
+      <div class="archive-body" id="archiveBody">
+        <!-- 建造统计 -->
+        <div class="archive-tabpanel" id="panel-stats" role="tabpanel" aria-labelledby="tab-stats">
+          <div class="archive-section">
+            <h3>建造统计 <span>/ BUILD STATISTICS</span></h3>
+            <div class="stat-grid" id="archiveStats"></div>
+          </div>
+          <div class="archive-section">
+            <h3>球场基本事实 <span>/ META</span></h3>
+            <div class="fact-list" id="archiveFacts"></div>
+          </div>
+          <div class="archive-section">
+            <h3>建模口径 <span>/ RECONSTRUCTION BASIS</span></h3>
+            <div class="fact-list" id="archiveBasis"></div>
+          </div>
+        </div>
+
+        <!-- 看台档案 -->
+        <div class="archive-tabpanel" id="panel-stands" role="tabpanel" aria-labelledby="tab-stands" hidden>
+          <div class="archive-section">
+            <h3>四座看台 <span>/ STANDS</span></h3>
+            <div id="archiveStands"></div>
+          </div>
+        </div>
+
+        <!-- 资料来源 -->
+        <div class="archive-tabpanel" id="panel-sources" role="tabpanel" aria-labelledby="tab-sources" hidden>
+          <div class="archive-section">
+            <h3>资料来源清单 <span>/ SOURCES</span></h3>
+            <p class="option-desc" style="margin-bottom:14px">
+              灰显条目为本次构建环境中<strong>无法访问</strong>的来源，已如实保留并写出原因，未用于尺寸取值。
+            </p>
+            <div class="source-list" id="archiveSources"></div>
+          </div>
+        </div>
+
+        <!-- 精度声明 -->
+        <div class="archive-tabpanel" id="panel-disclaimer" role="tabpanel" aria-labelledby="tab-disclaimer" hidden>
+          <div class="archive-section">
+            <h3>免责与精度声明 <span>/ DISCLAIMER</span></h3>
+            <p class="disclaimer-short" id="archiveDisclaimerShort"></p>
+            <ul class="disclaimer-list" id="archiveDisclaimerLong"></ul>
+          </div>
+        </div>
+
+        <!-- 快捷键 -->
+        <div class="archive-tabpanel" id="panel-keys" role="tabpanel" aria-labelledby="tab-keys" hidden>
+          <div class="archive-section">
+            <h3>键盘快捷键 <span>/ SHORTCUTS</span></h3>
+            <div class="key-list">
+              <div class="key-row"><div><kbd>1</kbd>…<kbd>9</kbd><kbd>0</kbd></div><span>按序号切换视点（视点列表左侧序号）</span></div>
+              <div class="key-row"><div><kbd>[</kbd><kbd>]</kbd></div><span>上一个 / 下一个视点</span></div>
+              <div class="key-row"><div><kbd>R</kbd></div><span>复位视角到东南鸟瞰</span></div>
+              <div class="key-row"><div><kbd>N</kbd></div><span>昼夜对调（白昼 12:30 / 夜间 20:36）</span></div>
+              <div class="key-row"><div><kbd>E</kbd></div><span>剖切显示开关</span></div>
+              <div class="key-row"><div><kbd>X</kbd></div><span>屋盖显隐（透明度 100% ⇄ 12%）</span></div>
+              <div class="key-row"><div><kbd>C</kbd></div><span>周边配景显隐</span></div>
+              <div class="key-row"><div><kbd>M</kbd></div><span>队歌播放 / 停止</span></div>
+              <div class="key-row"><div><kbd>V</kbd></div><span>切换控制台：控制 ⇄ 队史档案库</span></div>
+              <div class="key-row"><div><kbd>空格</kbd></div><span>自动环绕开关</span></div>
+              <div class="key-row"><div><kbd>K</kbd></div><span>打开 / 关闭档案抽屉</span></div>
+              <div class="key-row"><div><kbd>?</kbd> <kbd>H</kbd></div><span>打开快捷键清单</span></div>
+              <div class="key-row"><div><kbd>F</kbd></div><span>全屏</span></div>
+              <div class="key-row"><div><kbd>Esc</kbd></div><span>关闭抽屉 / 取消看台选择</span></div>
+            </div>
+          </div>
+          <div class="archive-section">
+            <h3>鼠标与触控 <span>/ POINTER</span></h3>
+            <div class="key-list">
+              <div class="key-row"><div><kbd>拖拽</kbd></div><span>绕目标点旋转视角</span></div>
+              <div class="key-row"><div><kbd>滚轮</kbd></div><span>推拉镜头</span></div>
+              <div class="key-row"><div><kbd>右键拖拽</kbd></div><span>平移观察目标</span></div>
+              <div class="key-row"><div><kbd>左键点击看台</kbd></div><span>锁定看台信息卡</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <audio id="anthemPlayer" loop preload="auto" aria-hidden="true"></audio>
+  <span id="top"></span>
+</div>
+
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>

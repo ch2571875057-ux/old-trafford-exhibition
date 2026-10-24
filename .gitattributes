@@ -1,0 +1,20 @@
+# 统一换行：文本走 LF，避免 Windows 与 macOS 之间来回改写整文件
+* text=auto eol=lf
+
+# 二进制资产（不要让 git 尝试 diff / 转行尾）
+*.glb   binary
+*.mp3   binary
+*.png   binary
+*.ico   binary
+*.docx  binary
+*.zip   binary
+
+# 三大前端资产按文本处理
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.py    text eol=lf
+*.bat   text eol=crlf

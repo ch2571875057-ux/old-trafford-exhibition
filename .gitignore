@@ -1,0 +1,43 @@
+# 下载与构建产物
+dist/
+build/
+*.spec
+!desktop/old_trafford.spec
+
+# 本地日志
+*.log
+old-trafford.log
+selftest.log
+
+# 工作/研究用中间目录（不进仓库）
+_data/
+_ref/
+_tools/
+_x_docx/
+.workbuddy/
+_probe/
+_recover/
+_release/
+研究/_tmp*/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时文件
+~$*
+*.tmp
+*.bak

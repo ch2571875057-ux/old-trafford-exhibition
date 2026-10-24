@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>老特拉福德球场 · 交互式三维展览</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0a0708; overflow: hidden; }
+  /* 用 position:fixed + inset 而不是 100%/100%：后者在小数像素高度下会多出一条
+     Edge 侧面滚动条，看起来像窗口两边各挂了一根竖条 */
+  iframe { display: block; border: 0; position: fixed; inset: 0; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<!--
+  桌面版窗口外壳：把展览页整幅装进 iframe，并每 2 秒向服务端发一次心跳。
+  窗口关掉后心跳停下，desktop/app.py 会自行退出（不留后台进程）。
+  展览页本身的地址参数（?view= / ?time= 等）原样透传。
+-->
+<iframe id="app" title="老特拉福德球场" allow="fullscreen; autoplay" allowfullscreen></iframe>
+<script>
+  (function () {
+    const query = location.search || '';
+    document.getElementById('app').src = '/index.html' + query;
+
+    const ping = () => fetch('/__ping', { cache: 'no-store' }).catch(() => {});
+    ping();
+    setInterval(ping, 2000);
+
+    // 让窗口标题跟着展览页走（iframe 内 document.title 变化时同步）
+    const frame = document.getElementById('app');
+    frame.addEventListener('load', () => {
+      try {
+        const title = frame.contentDocument && frame.contentDocument.title;
+        if (title) document.title = title;
+      } catch (error) { /* 同源时才会成功，忽略 */ }
+    });
+  }());
+</script>
+</body>
+</html>
