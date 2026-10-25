@@ -243,6 +243,10 @@ const el = {
   customAchievements: $('customAchievements'),
   customHonours: $('customHonours'),
 
+  dataExport: $('dataExport'),
+  dataImport: $('dataImport'),
+  dataImportFile: $('dataImportFile'),
+
   lineupCard: $('lineupCard'),
   lineupCardInner: $('lineupCardInner'),
 };
@@ -937,6 +941,7 @@ function setHour(hour, announce = false) {
   state.hour = clamp(hour, 0, 24);
   state.envDirty = true;
   updateTimeUI();
+  savePrefs();
   if (announce) {
     showToast(`${phaseForHour(state.hour)} · ${state.hour.toFixed(1).replace('.', ' 时 ')} 分`);
   }
@@ -956,6 +961,7 @@ function setSeatMode(modeId, announce = true) {
   });
   el.seatModeName.textContent = mode.name;
   el.seatModeDesc.textContent = mode.desc;
+  savePrefs();
   if (announce) showToast(`座席显示 · ${mode.name}`);
 }
 
@@ -990,6 +996,7 @@ function setContextVisible(on, announce = true) {
   state.context = Boolean(on);
   stadium?.setContextVisible(state.context);
   setSwitch('context', state.context);
+  savePrefs();
   if (announce) showToast(state.context ? '周边配景已显示' : '周边配景已隐藏');
 }
 
@@ -1002,6 +1009,7 @@ function setAutoRotate(on, announce = true) {
   setSwitch('rotate', state.autoRotate);
   el.dockRotate?.setAttribute('aria-pressed', String(state.autoRotate));
   el.dockRotate?.classList.toggle('is-active', state.autoRotate);
+  savePrefs();
   if (announce) showToast(state.autoRotate ? '自动环绕已开启' : '自动环绕已关闭');
 }
 
@@ -1009,6 +1017,7 @@ function setFloodlights(on, announce = true) {
   state.floodlights = Boolean(on);
   setSwitch('floodlights', state.floodlights);
   state.envDirty = true;
+  savePrefs();
   if (announce) showToast(state.floodlights ? '泛光灯已启用' : '泛光灯已关闭');
 }
 
@@ -2087,6 +2096,7 @@ function addCustomPlayer(data) {
   customPlayers.push(player);
   saveCustomPlayers();
   benchPool.push(player);
+  savePrefs();   // 自定义卡入库即入档（槽位引用按 slug 关联）
   populatePlayers();
   showToast(`已添加自定义球员 ${player.nameZh} · 现在替补席，可用「换上」登场`, 3600);
   return player;
@@ -2123,6 +2133,7 @@ function removeCustomPlayer(slug) {
 
   populatePlayers();
   buildLineupRoster();
+  savePrefs();
   showToast(`已删除自定义球员 ${player.nameZh}`);
   return true;
 }
@@ -2158,16 +2169,10 @@ function benchForSquad(mode) {
     : [...(PLAYERS.groups[1]?.members ?? []), ...customPlayers];
 }
 
-function applySquad(mode) {
-  if ((mode !== 'current' && mode !== 'alltime') || mode === state.squad) return;
-  state.squad = mode;
-  buildSquadToggle();
-
-  // 互斥：卡面锁定与换人模式先退出
-  if (state.lineupFocus) unfocusLineup(true);
-  if (pendingSub) endPendingSub();
-
+/** 静默切换槽位/替补池/教练/阵型复位（无镜头、无提示）——交互切换与开机恢复共用 */
+function setSquadState(mode) {
   const isAll = mode === 'alltime';
+  state.squad = mode;
   lineupSlots.forEach((slot, index) => {
     slot.player = isAll
       ? ALL_TIME.members[index]
@@ -2195,13 +2200,22 @@ function applySquad(mode) {
     }
   }
 
-  // 走位：队史 → 4-4-2 落点；回现役 → 恢复默认阵型
-  if (isAll) {
-    state.formation = '4-4-2';
-  } else {
-    state.formation = FORMATIONS.default;
-    buildFormationPicker();
-  }
+  // 阵型：队史固定 4-4-2；回现役恢复默认
+  if (isAll) state.formation = '4-4-2';
+  else state.formation = FORMATIONS.default;
+  buildSquadToggle();
+  buildFormationPicker();
+  return isAll;
+}
+
+function applySquad(mode) {
+  if ((mode !== 'current' && mode !== 'alltime') || mode === state.squad) return;
+
+  // 互斥：卡面锁定与换人模式先退出
+  if (state.lineupFocus) unfocusLineup(true);
+  if (pendingSub) endPendingSub();
+
+  const isAll = setSquadState(mode);
   startLineupTween(
     isAll ? ALL_TIME.members.map((m) => m.at) : LINEUP.members.map((m) => m.at),
     isAll ? '队史最佳 XI · 4-4-2 · 弗格森' : '现役阵容 2026-27',
@@ -2209,6 +2223,7 @@ function applySquad(mode) {
 
   populatePlayers();
   buildLineupRoster();
+  savePrefs();
   showToast(isAll ? '已切换至队史最佳阵容（含替补席 10 人）' : '已切换回现役阵容', 3000);
 }
 
@@ -2220,6 +2235,212 @@ function buildSquadToggle() {
   });
   el.formationPicker?.classList.toggle('is-disabled', state.squad !== 'current');
 }
+
+/* ===========================================================================
+ * 阵容与氛围设置的本地持久化（localStorage，与自定义球员卡同一存储策略）
+ * --------------------------------------------------------------------------
+ * 快照结构 oldtrafford.prefs.v1：
+ *   { version, squad, formation,
+ *     swaps: [{ slot: 槽位名(slotName), ref: 'slug:xxx' | 球员名 }],   // 仅记与默认不同的槽位
+ *     prefs: { hour, seatMode, context, floodlights, autoRotate } }
+ * 恢复优先级：URL 查询参数 > 本地快照 > 代码默认值。
+ * ========================================================================= */
+const PREFS_KEY = 'oldtrafford.prefs.v1';
+
+function readPrefs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || 'null');
+    return raw && typeof raw === 'object' ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 槽位默认球员：现役 = 同名首发；队史 = 同序号 ALL_TIME 首发 */
+function defaultPlayerForSlot(slot, index) {
+  return state.squad === 'alltime'
+    ? ALL_TIME.members[index]
+    : PLAYERS.groups[0]?.members.find((p) => p.name === slot.slotName)
+      ?? { name: slot.slotName };
+}
+
+function snapshotPrefs() {
+  const swaps = [];
+  lineupSlots.forEach((slot, index) => {
+    const def = defaultPlayerForSlot(slot, index);
+    if (slot.player?.name !== def?.name) {
+      swaps.push({
+        slot: slot.slotName,
+        ref: slot.player?.custom ? `slug:${slot.player.slug}` : slot.player?.name,
+      });
+    }
+  });
+  return {
+    version: 1,
+    squad: state.squad,
+    formation: state.formation,
+    swaps,
+    prefs: {
+      hour: state.hour,
+      seatMode: state.seatMode,
+      context: state.context,
+      floodlights: state.floodlights,
+      autoRotate: state.autoRotate,
+    },
+  };
+}
+
+let prefsSaveTimer = null;
+function savePrefs() {
+  clearTimeout(prefsSaveTimer);
+  prefsSaveTimer = setTimeout(() => {
+    prefsSaveTimer = null;
+    flushPrefs();
+  }, 300);
+}
+
+/** 立即写盘（beforeunload 兜底 / 导出复用）：存储满或隐私模式静默失败 */
+function flushPrefs() {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(snapshotPrefs()));
+  } catch { /* 静默 */ }
+}
+
+/* --- 本机数据导出 / 导入（档案抽屉）：自定义球员卡 + 阵容与氛围设置 ---------- */
+
+const EXPORT_APP_ID = 'old-trafford-exhibition';
+const EXPORT_VERSION = 1;
+
+/** 导出：当前快照 + 自定义球员卡 → JSON 文件下载 */
+function exportLocalData() {
+  flushPrefs();
+  const payload = {
+    app: EXPORT_APP_ID,
+    version: EXPORT_VERSION,
+    exportedAt: new Date().toISOString(),
+    customPlayers,
+    prefs: readPrefs(),
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `old-trafford-data-${stamp}.json`;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+  showToast(`已导出 ${customPlayers.length} 张自定义卡与当前设置`, 3200);
+}
+
+/** 导入：校验 → 写回两个 localStorage 键 → 刷新生效；坏文件不动存量 */
+function importLocalData(file) {
+  const fail = (msg) => showToast(`导入失败：${msg}`, 3600);
+  if (!file) return;
+  file.text().then((text) => {
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      fail('不是有效的 JSON 文件');
+      return;
+    }
+    if (data?.app !== EXPORT_APP_ID || data.version !== EXPORT_VERSION) {
+      fail('文件格式不匹配（需本页导出的备份）');
+      return;
+    }
+    if (!Array.isArray(data.customPlayers) || !data.prefs) {
+      fail('备份内容不完整');
+      return;
+    }
+    try {
+      localStorage.setItem(CUSTOM_PLAYERS_KEY, JSON.stringify(data.customPlayers));
+      localStorage.setItem(PREFS_KEY, JSON.stringify(data.prefs));
+    } catch {
+      fail('浏览器存储写入失败');
+      return;
+    }
+    showToast('导入成功，正在刷新…', 2000);
+    window.setTimeout(() => window.location.reload(), 600);
+  }).catch(() => fail('文件读取失败'));
+}
+
+/** 把氛围设置合入 state（boot 初始 setter 之前调用；URL 参数优先） */
+function applyStoredPrefsToState() {
+  const snap = readPrefs();
+  if (!snap?.prefs) return;
+  const p = snap.prefs;
+  if (!params.has('time') && Number.isFinite(p.hour)) state.hour = clamp(p.hour, 0, 24);
+  if (!params.has('seat') && SEAT_MODES.some((m) => m.id === p.seatMode)) state.seatMode = p.seatMode;
+  if (!params.has('context') && typeof p.context === 'boolean') state.context = p.context;
+  if (!params.has('lights') && typeof p.floodlights === 'boolean') state.floodlights = p.floodlights;
+  if (!params.has('rotate') && typeof p.autoRotate === 'boolean') state.autoRotate = p.autoRotate;
+}
+
+/** 人形直接落位（不走补间）——开机恢复阵型用，坐标换算与 tickFormationTween 一致 */
+function placeFiguresAt(slots) {
+  if (!stadium?.lineupParts || !stadium.lineupFrame) return;
+  const f = stadium.lineupFrame;
+  lineupSlots.forEach((slot, index) => {
+    const part = stadium.lineupParts.find((p) => p.name === slot.slotName);
+    if (!part || !Array.isArray(slots[index])) return;
+    part.group.position.set(slots[index][0], 0, slots[index][1]);
+    const lx = part.group.position.x;
+    const lz = part.group.position.z;
+    part.worldAt.set(
+      f.position.x + lx * f.cos + lz * f.sin,
+      part.group.position.y,
+      f.position.z - lx * f.sin + lz * f.cos,
+    );
+    part.anchor.copy(part.worldAt);
+  });
+}
+
+/** 开机恢复阵容：模式 → 换人回放 → 阵型落位（boot 里 populatePlayers 之后调用） */
+function restoreLineupPrefs() {
+  const snap = readPrefs();
+  if (!snap || (snap.squad !== 'alltime' && snap.squad !== 'current')) return;
+  const changed = snap.squad !== state.squad;
+  if (changed) setSquadState(snap.squad);
+  else buildSquadToggle();
+
+  // 回放换人：自定义球员按 slug 找回，官方/传奇按名字在对应替补池里找
+  (Array.isArray(snap.swaps) ? snap.swaps : []).forEach(({ slot: slotName, ref } = {}) => {
+    if (!slotName || !ref) return;
+    const index = lineupSlots.findIndex((s) => s.slotName === slotName);
+    if (index < 0) return;
+    const incoming = typeof ref === 'string' && ref.startsWith('slug:')
+      ? customPlayers.find((p) => p.slug === ref.slice(5))
+      : benchForSquad(state.squad).find((p) => p.name === ref);
+    if (!incoming || !benchPool.includes(incoming)) return;   // 卡已删/不在池：回落默认
+    const slot = lineupSlots[index];
+    const outgoing = slot.player;
+    slot.player = incoming;
+    benchPool.splice(benchPool.indexOf(incoming), 1, outgoing);
+    const part = stadium?.lineupParts?.find((p) => p.name === slotName);
+    if (part) {
+      part.player = incoming;
+      part.group.traverse((obj) => {
+        if (obj.userData?.lineupPlayer !== undefined) obj.userData.lineupPlayer = incoming.name;
+      });
+    }
+  });
+
+  // 阵型落位：现役按存档阵型，队史固定 4-4-2（ALL_TIME 落点）
+  if (state.squad === 'alltime') {
+    if (changed) placeFiguresAt(ALL_TIME.members.map((m) => m.at));
+  } else if (typeof snap.formation === 'string' && FORMATIONS.list.some((f) => f.id === snap.formation)) {
+    const formation = FORMATIONS.list.find((f) => f.id === snap.formation);
+    if (formation.id !== FORMATIONS.default) {
+      state.formation = formation.id;
+      buildFormationPicker();
+      placeFiguresAt(formation.slots);
+    }
+  }
+
+  populatePlayers();
+  buildLineupRoster();
+}
+
 let pendingSub = null;   // 待换上的替补球员（换人模式）
 
 /** 把替补换到槽位上，被换下的回到替补池；同步更新场上人形、名单与抽屉 */
@@ -2239,6 +2460,7 @@ function substitutePlayer(slotIndex, incoming) {
   populatePlayers();
   buildLineupRoster();
   showToast(`换人 · ${outgoing.nameZh} ⇄ ${incoming.nameZh}`);
+  savePrefs();
   return true;
 }
 
@@ -2320,6 +2542,7 @@ function switchFormation(id) {
   if (state.lineupFocus) unfocusLineup(true);
 
   startLineupTween(formation.slots, `阵型 ${formation.label} · ${formation.title}`);
+  savePrefs();
 }
 
 /** 每帧推进人形走位补间；到位后自动回落到阵容总览机位 */
@@ -2574,6 +2797,7 @@ function updateCustomPlayer(slug, data) {
   // 若 3D 特写正停在该球员上，就地刷新卡面
   const part = stadium?.lineupParts?.find((p) => p.name === state.lineupFocus);
   if (part?.player === entry) fillLineupCard(entry);
+  savePrefs();
   showToast(`已更新自定义球员 ${entry.nameZh}`);
   return true;
 }
@@ -2868,6 +3092,15 @@ function bindChrome() {
   el.archiveScrim.addEventListener('click', closeArchive);
   el.dockArchive.addEventListener('click', () => toggleArchive());
 
+  // 本机数据导出 / 导入（档案抽屉 · 建造统计页底部）
+  el.dataExport?.addEventListener('click', exportLocalData);
+  el.dataImport?.addEventListener('click', () => el.dataImportFile?.click());
+  el.dataImportFile?.addEventListener('change', () => {
+    const file = el.dataImportFile.files?.[0];
+    el.dataImportFile.value = '';   // 允许连续导入同名文件
+    importLocalData(file);
+  });
+
   el.playersButton?.addEventListener('click', () => togglePlayers());
   el.playersClose.addEventListener('click', closePlayers);
   el.playersScrim.addEventListener('click', closePlayers);
@@ -3121,6 +3354,9 @@ async function loadStadium() {
 }
 
 async function init() {
+  applyStoredPrefsToState();   // 本地存档的阵容/氛围设置合入初始状态（URL 参数优先）
+  // 仅在防抖尚有未落盘变更时兜底写盘：无条件写会把导入/清空刚写入的键用内存旧态覆盖
+  window.addEventListener('beforeunload', () => { if (prefsSaveTimer) flushPrefs(); });
   if (params.get('ui') === '0') document.body.classList.add('hide-ui');
   if (document.fullscreenEnabled === false) el.fullscreenButton.style.display = 'none';
 
@@ -3162,8 +3398,7 @@ async function init() {
   if (params.get('shell') === '1') {
     // 只浏览界面外壳：不加载几何，用于几何模块尚未就绪时预览交互层
     populateArchive();
-    populatePlayers();
-    buildLineupRoster();
+    restoreLineupPrefs();   // 恢复存档阵容（shell 模式无几何，只恢复名单与抽屉）
     bindCardFlip();
     finishBoot();
     renderer.setAnimationLoop(animate);
@@ -3203,8 +3438,7 @@ async function init() {
   setAutoRotate(state.autoRotate, false);
   applyStats();
   populateArchive();
-  populatePlayers();
-  buildLineupRoster();
+  restoreLineupPrefs();    // 恢复存档阵容：模式 → 换人回放 → 阵型落位（内部刷新名单与抽屉）
   buildFormationPicker();
   bindCardFlip();          // 成品卡翻面：抽屉与阵容浮层共用一次委托
   renderHeritage();

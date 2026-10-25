@@ -2230,3 +2230,27 @@ body.is-subbing #scene { cursor: crosshair; }
 @media (prefers-reduced-motion: reduce) {
   .fcard { transition: none; }
 }
+
+/* 档案抽屉 · 本机数据导出/导入 */
+.data-io-note {
+  margin: 0 0 10px;
+  font-size: 10.5px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+.data-io { display: flex; gap: 10px; }
+.data-io button {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  padding: 8px 14px;
+  border-radius: 2px;
+  cursor: pointer;
+  background: rgba(200, 16, 46, 0.16);
+  border: 1px solid rgba(200, 16, 46, 0.55);
+  color: #ff8fa0;
+}
+.data-io button:hover, .data-io button:focus-visible {
+  background: rgba(200, 16, 46, 0.34);
+  color: #f7efe9;
+}

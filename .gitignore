@@ -41,3 +41,6 @@ desktop.ini
 ~$*
 *.tmp
 *.bak
+
+# ZCode 会话产物
+.zcode/

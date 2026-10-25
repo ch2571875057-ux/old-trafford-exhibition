@@ -577,6 +577,15 @@
             <h3>建模口径 <span>/ RECONSTRUCTION BASIS</span></h3>
             <div class="fact-list" id="archiveBasis"></div>
           </div>
+          <div class="archive-section">
+            <h3>本机数据 <span>/ LOCAL DATA</span></h3>
+            <p class="data-io-note">自定义球员卡与阵容/氛围设置保存在本机浏览器（localStorage），断网可用；换浏览器或清缓存前请先导出备份。</p>
+            <div class="data-io">
+              <button type="button" id="dataExport" title="把自定义球员卡与设置导出为 JSON 备份文件">导出数据</button>
+              <button type="button" id="dataImport" title="从 JSON 备份恢复自定义球员卡与设置">导入数据</button>
+              <input type="file" id="dataImportFile" accept="application/json,.json" hidden>
+            </div>
+          </div>
         </div>
 
         <!-- 看台档案 -->
