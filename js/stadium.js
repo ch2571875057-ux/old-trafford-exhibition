@@ -600,14 +600,17 @@ function createLineup(pitchFrame) {
     });
   }
 
-  /* ---- 主教练：教练区（南看台前沿技术区），同款几何体；卡面暂为空白占位 ---- */
+  /* ---- 主教练：教练区（南看台前沿技术区），黑色人形（区别于红色球员） ---- */
   if (Array.isArray(COACH.at)) {
     const coachFigure = new THREE.Group();
     coachFigure.name = 'lineup-head-coach';
     coachFigure.position.set(COACH.at[0], 0, COACH.at[1]);
-    const coachBody = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    const coachMaterial = new THREE.MeshStandardMaterial({
+      name: 'lineupCoach', color: 0x191617, roughness: 0.6, metalness: 0.05,
+    });
+    const coachBody = new THREE.Mesh(bodyGeometry, coachMaterial);
     coachBody.position.y = 1.04;
-    const coachHead = new THREE.Mesh(headGeometry, headMaterial);
+    const coachHead = new THREE.Mesh(headGeometry, coachMaterial);
     coachHead.position.y = 2.42;
     const coachHit = new THREE.Mesh(hitGeometry, hitMaterial);
     coachHit.position.y = 1.35;
@@ -620,7 +623,11 @@ function createLineup(pitchFrame) {
     const coachWorld = localToWorld(coachFigure.position);
     parts.push({
       name: COACH.name,
-      player: { blank: true, num: null, name: COACH.name, nameZh: COACH.nameZh, pos: COACH.pos },
+      player: {
+        slug: COACH.slug, coach: true, num: null,
+        name: COACH.name, nameZh: COACH.nameZh,
+        pos: COACH.pos, posZh: COACH.posZh, nation: COACH.nation, photo: '',
+      },
       group: coachFigure,
       worldAt: coachWorld,
       anchor: coachWorld.clone(),

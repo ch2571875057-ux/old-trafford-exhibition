@@ -234,6 +234,11 @@
         <span>人形显示（任意机位可见）</span>
         <button class="figures-toggle" type="button" id="figuresToggle" aria-pressed="false" aria-label="人形显示开关"><i></i></button>
       </div>
+      <div class="panel-subhead"><span class="kicker">SQUAD</span><span>阵容</span></div>
+      <div class="squad-toggle" id="squadToggle">
+        <button type="button" data-squad="current" class="is-active" title="2026-27 赛季现役阵容">现役 2026-27</button>
+        <button type="button" data-squad="alltime" title="媒体与名宿口径评选的队史最佳阵容（含替补席与弗格森）">队史最佳 XI</button>
+      </div>
       <div class="panel-subhead"><span class="kicker">FORMATION</span><span>阵型</span></div>
       <div class="formation-grid" id="formationPicker">
         <!-- 由 js/app.js 依 FORMATIONS 生成 -->
@@ -656,6 +661,51 @@
         </div>
         <p class="players-note" id="playersNote"></p>
       </div>
+      <button class="players-add" type="button" id="playersAdd" aria-expanded="false" title="自制球员卡：保存在本机浏览器，进入替补席后可换上场">
+        ＋ 添加自定义球员卡
+      </button>
+      <form class="custom-form" id="customForm" hidden>
+        <h3>添加自定义球员卡</h3>
+        <div class="custom-form-grid">
+          <label>英文姓名<input id="customName" type="text" required placeholder="Alex Player"></label>
+          <label>中文姓名<input id="customNameZh" type="text" placeholder="亚历克斯 · 球员"></label>
+          <label>号码<input id="customNum" type="number" min="1" max="99" placeholder="21"></label>
+          <label>位置<select id="customPos"></select></label>
+          <label>国籍代码<input id="customNation" type="text" maxlength="3" placeholder="CHN"></label>
+          <label>出生年份<input id="customBorn" type="text" maxlength="6" placeholder="2000"></label>
+        </div>
+        <label class="custom-form-photo">卡面照片（可选 · 会压缩后保存在本机浏览器）
+          <input id="customPhoto" type="file" accept="image/*">
+        </label>
+        <div class="custom-form-preview" id="customPhotoPreview" hidden><img alt="照片预览"></div>
+        <fieldset class="custom-form-stats">
+          <legend>背面 · 三项数据</legend>
+          <label>数据口径<input id="customStatLabel" type="text" placeholder="自定义数据"></label>
+          <div class="custom-form-stat-row">
+            <input id="customStatKey0" type="text" placeholder="出场" aria-label="第一项名称">
+            <input id="customStatVal0" type="text" placeholder="—" aria-label="第一项数值">
+            <input id="customStatKey1" type="text" placeholder="进球" aria-label="第二项名称">
+            <input id="customStatVal1" type="text" placeholder="—" aria-label="第二项数值">
+            <input id="customStatKey2" type="text" placeholder="助攻" aria-label="第三项名称">
+            <input id="customStatVal2" type="text" placeholder="—" aria-label="第三项数值">
+          </div>
+        </fieldset>
+        <label>成就（每行一条 · 格式：年份|说明）
+          <textarea id="customAchievements" rows="3" placeholder="2026|加盟曼联"></textarea>
+        </label>
+        <label>荣誉（每行一条）
+          <textarea id="customHonours" rows="2" placeholder="社区盾 ×1"></textarea>
+        </label>
+        <div class="custom-form-actions">
+          <button type="submit" class="custom-form-save">保存并加入替补席</button>
+          <button type="button" id="customFormCancel">取消</button>
+        </div>
+        <p class="custom-form-hint">
+          自定义球员保存在本机浏览器（localStorage），加入后自动出现在「曼联球员」抽屉替补席；
+          用替补卡上的「换上」点击场上人形即可登场，登场后阵容名单与 3D 卡面同步更新。
+          卡下方的「编辑」可随时修改信息、「删除」可移除。刷新或重启后仍在。
+        </p>
+      </form>
       <div class="players-body" id="playersBody">
         <!-- 由 js/app.js 依 PLAYERS 填充 -->
       </div>
